@@ -1,11 +1,11 @@
 # ==============================================================================
-# GitHub Actions Workflow: "Overthinker at the Gym" Funny 2D-Style 3D Animation (v3)
-# Stack: Remotion 4 + Three.js (LatheGeometry + Smooth TubeGeometry Limbs + NoToneMapping)
-#        + Synced Procedural Comedy WAV SFX
+# GitHub Actions Workflow: "Overthinker at the Gym" Funny 2D-Style 3D Animation (v4)
+# Stack: Remotion 4 + Three.js (Unlit Crisp 2D Ink + Smooth Tube/Lathe + Gym Props)
+#        + Synced Heartbeat, Gym Foley & Procedural Comedy WAV SFX
 # Output: 1080x1920 (9:16 Vertical Short), 30fps, 32s (960 frames), H.264 MP4
 # ==============================================================================
 
-name: Render Funny Gym Overthinker Animation (Three.js + Remotion v3)
+name: Render Funny Gym Overthinker Animation (Three.js + Remotion v4)
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ on:
         required: false
         default: "2"
       include_audio:
-        description: "Include synced procedural comedy SFX & lo-fi soundtrack"
+        description: "Include synced procedural comedy SFX, heartbeat & gym foley"
         type: boolean
         required: false
         default: true
@@ -60,7 +60,7 @@ jobs:
             fonts-dejavu-core
           sudo apt-get install -y libasound2t64 || sudo apt-get install -y libasound2
 
-      - name: Scaffold Optimized Remotion + Three.js Project (v3)
+      - name: Scaffold Optimized Remotion + Three.js Project (v4)
         run: |
           rm -rf gym-anim
           mkdir -p gym-anim/src/scene gym-anim/src/components gym-anim/src/utils gym-anim/scripts gym-anim/public gym-anim/out
@@ -70,8 +70,8 @@ jobs:
           # --------------------------------------------------------------------
           cat << 'EOF' > gym-anim/package.json
           {
-            "name": "overthinker-at-the-gym-v3",
-            "version": "3.0.0",
+            "name": "overthinker-at-the-gym-v4",
+            "version": "4.0.0",
             "private": true,
             "scripts": {
               "audio": "node scripts/generate-audio.mjs",
@@ -128,7 +128,7 @@ jobs:
           EOF
 
           # --------------------------------------------------------------------
-          # 4. Synced Procedural Comedy Audio Synthesizer (scripts/generate-audio.mjs)
+          # 4. Synced Comedy SFX, Heartbeat & Gym Foley Synthesizer (scripts/generate-audio.mjs)
           # --------------------------------------------------------------------
           cat << 'EOF' > gym-anim/scripts/generate-audio.mjs
           import fs from "node:fs";
@@ -156,7 +156,8 @@ jobs:
             return (rngState / 4294967296) * 2 - 1;
           }
 
-          function addLofiSegment(startSec, endSec, gain = 0.22) {
+          // 1. Dreamy Lo-Fi Electric Piano (Peaceful Gym BGM)
+          function addLofiSegment(startSec, endSec, gain = 0.25) {
             const chords = [
               [261.63, 329.63, 392.0, 493.88],
               [220.0, 261.63, 329.63, 392.0],
@@ -185,108 +186,165 @@ jobs:
             }
           }
 
-          function addVineBoom(timeSec, intensity = 0.85) {
+          // 2. Gym Machine Weight-Stack Metallic Clank Foley
+          function addWeightClank(timeSec, gain = 0.22) {
             const startIdx = Math.floor(timeSec * SAMPLE_RATE);
-            const len = Math.floor(1.4 * SAMPLE_RATE);
-            let phase = 0;
+            const len = Math.floor(0.26 * SAMPLE_RATE);
             for (let n = 0; n < len; n++) {
               const t = n / SAMPLE_RATE;
-              const freq = 145 * Math.exp(-t * 9.5) + 33;
-              phase += (2 * Math.PI * freq) / SAMPLE_RATE;
-              const env = Math.min(1, t * 250) * Math.exp(-t * 2.9);
-              const raw = Math.sin(phase) * 1.6 + Math.sin(phase * 2) * 0.35 + rand() * 0.18 * Math.exp(-t * 22);
-              const saturated = Math.tanh(raw * 1.5) * env * intensity;
-              addSample(startIdx + n, saturated, saturated);
+              const env = Math.min(1, t * 400) * Math.exp(-t * 24);
+              const metal =
+                Math.sin(2 * Math.PI * 385 * t) * 0.55 +
+                Math.sin(2 * Math.PI * 742 * t) * 0.38 +
+                Math.sin(2 * Math.PI * 1290 * t) * 0.25 +
+                rand() * 0.2 * Math.exp(-t * 45);
+              const v = metal * env * gain;
+              addSample(startIdx + n, v, v * 0.94);
             }
           }
 
-          function addPanicTicks(startSec, endSec, rateHz = 14, gain = 0.28) {
-            for (let t = startSec; t < endSec; t += 1 / rateHz) {
-              const startIdx = Math.floor(t * SAMPLE_RATE);
-              const dur = Math.floor(0.045 * SAMPLE_RATE);
-              const baseF = 550 + ((Math.floor(t * 37) % 5) * 110);
-              for (let n = 0; n < dur; n++) {
-                const nt = n / SAMPLE_RATE;
-                const f = baseF + nt * 3200;
-                const env = Math.exp(-nt * 65);
-                const s = Math.sin(2 * Math.PI * f * nt) * env * gain;
-                const pan = (Math.floor(t * 10) % 2 === 0) ? 0.8 : 1.2;
-                addSample(startIdx + n, s * pan, s * (2 - pan));
+          // 3. Sharp Camera Snap-Zoom Whoosh
+          function addSnapWhoosh(timeSec, gain = 0.26) {
+            const startIdx = Math.floor(timeSec * SAMPLE_RATE);
+            const len = Math.floor(0.2 * SAMPLE_RATE);
+            let lp = 0;
+            for (let n = 0; n < len; n++) {
+              const prog = n / len;
+              lp = lp * 0.72 + rand() * 0.28;
+              const env = Math.sin(prog * Math.PI);
+              const sweep = Math.sin(2 * Math.PI * (240 + prog * 950) * (n / SAMPLE_RATE)) * 0.22;
+              const v = (lp * 0.9 + sweep) * env * gain;
+              addSample(startIdx + n, v, v);
+            }
+          }
+
+          // 4. Classic Dramatic Vine Boom
+          function addVineBoom(timeSec, intensity = 0.82) {
+          const startIdx = Math.floor(timeSec * SAMPLE_RATE);
+          const len = Math.floor(1.35 * SAMPLE_RATE);
+          let phase = 0;
+          for (let n = 0; n < len; n++) {
+          const t = n / SAMPLE_RATE;
+          const freq = 142 * Math.exp(-t * 9.5) + 33;
+          phase += (2 * Math.PI * freq) / SAMPLE_RATE;
+          const env = Math.min(1, t * 250) * Math.exp(-t * 2.95);
+          const raw = Math.sin(phase) * 1.55 + Math.sin(phase * 2) * 0.32 + rand() * 0.16 * Math.exp(-t * 24);
+          const saturated = Math.tanh(raw * 1.45) * env * intensity;
+          addSample(startIdx + n, saturated, saturated);
+          }
+          }
+          
+          // 5. Rising Anxious Heartbeat (Lub-Dub) + Gentle Tremble Shimmer (replaces harsh loud blips!)
+          function addAnxiousHeartbeat(startSec, endSec, startBpm = 105, endBpm = 175, gain = 0.42) {
+            let t = startSec;
+            while (t < endSec) {
+              const prog = (t - startSec) / Math.max(0.01, endSec - startSec);
+              const bpm = startBpm + (endBpm - startBpm) * prog;
+              const beatInterval = 60 / bpm;
+    
+              // "Lub" thump + "Dub" thump
+              const pulses = [
+                { offset: 0, f0: 95, amp: 1.0 },
+                { offset: Math.min(0.14, beatInterval * 0.3), f0: 118, amp: 0.72 },
+              ];
+              for (const p of pulses) {
+                const pStart = Math.floor((t + p.offset) * SAMPLE_RATE);
+                const len = Math.floor(0.14 * SAMPLE_RATE);
+                for (let n = 0; n < len; n++) {
+                  const nt = n / SAMPLE_RATE;
+                  const f = p.f0 * Math.exp(-nt * 16) + 38;
+                  const env = Math.min(1, nt * 160) * Math.exp(-nt * 22);
+                  const thump = Math.sin(2 * Math.PI * f * nt) * env * gain * p.amp;
+                  addSample(pStart + n, thump, thump);
+                }
               }
+              t += beatInterval;
+            }
+    
+            // Subtle soft cartoon sweat-shimmer underneath
+            const sIdx = Math.floor(startSec * SAMPLE_RATE);
+            const eIdx = Math.floor(endSec * SAMPLE_RATE);
+            for (let i = sIdx; i < eIdx; i++) {
+              const lt = (i - sIdx) / SAMPLE_RATE;
+              const fade = Math.min(1, lt * 6, (endSec - startSec - lt) * 8);
+              const vibrato = 440 + 38 * Math.sin(2 * Math.PI * 16 * lt);
+              const shimmer = Math.sin(2 * Math.PI * vibrato * lt) * 0.045 * Math.max(0, fade);
+              addSample(i, shimmer, shimmer);
             }
           }
-
-          function addTensionDrone(startSec, endSec, gain = 0.32) {
+    
+          // 6. Rising Anime Dread Brass Drone
+          function addTensionDrone(startSec, endSec, gain = 0.3) {
             const startIdx = Math.floor(startSec * SAMPLE_RATE);
             const endIdx = Math.floor(endSec * SAMPLE_RATE);
             const dur = endSec - startSec;
             let p1 = 0, p2 = 0, p3 = 0;
             for (let i = startIdx; i < endIdx; i++) {
               const prog = (i - startIdx) / (endIdx - startIdx);
-              const f1 = 65 + prog * 45;
-              const f2 = 98 + prog * 72;
-              const f3 = 131 + prog * 160;
-              p1 += (2 * Math.PI * f1) / SAMPLE_RATE;
-              p2 += (2 * Math.PI * f2) / SAMPLE_RATE;
-              p3 += (2 * Math.PI * f3) / SAMPLE_RATE;
+              p1 += (2 * Math.PI * (65 + prog * 42)) / SAMPLE_RATE;
+              p2 += (2 * Math.PI * (98 + prog * 68)) / SAMPLE_RATE;
+              p3 += (2 * Math.PI * (131 + prog * 148)) / SAMPLE_RATE;
               const env = Math.min(1, prog * 5) * Math.min(1, (1 - prog) * 12);
-              const pulse = 0.75 + 0.25 * Math.sin(2 * Math.PI * (3 + prog * 9) * (prog * dur));
-              const brass = Math.tanh((Math.sin(p1) + 0.7 * Math.sin(p2) + 0.5 * Math.sin(p3)) * 1.4);
+              const pulse = 0.78 + 0.22 * Math.sin(2 * Math.PI * (3 + prog * 8) * (prog * dur));
+              const brass = Math.tanh((Math.sin(p1) + 0.7 * Math.sin(p2) + 0.45 * Math.sin(p3)) * 1.35);
               const v = brass * env * pulse * gain;
               addSample(i, v, v);
             }
           }
-
-          function addWaterfall(startSec, endSec, gain = 0.35) {
+    
+          // 7. Tear Waterfall Whoosh
+          function addWaterfall(startSec, endSec, gain = 0.34) {
             const startIdx = Math.floor(startSec * SAMPLE_RATE);
             const endIdx = Math.floor(endSec * SAMPLE_RATE);
             let lp = 0;
             for (let i = startIdx; i < endIdx; i++) {
               const prog = (i - startIdx) / (endIdx - startIdx);
-              const n = rand();
-              lp = lp * 0.82 + n * 0.18;
+              lp = lp * 0.82 + rand() * 0.18;
               const env = Math.min(1, prog * 12) * Math.min(1, (1 - prog) * 8);
-              const bubble = Math.sin(2 * Math.PI * (320 + 180 * Math.sin(prog * 45)) * (i / SAMPLE_RATE)) * 0.15;
-              const v = (lp * 1.7 + bubble) * env * gain;
+              const bubble = Math.sin(2 * Math.PI * (310 + 160 * Math.sin(prog * 44)) * (i / SAMPLE_RATE)) * 0.14;
+              const v = (lp * 1.65 + bubble) * env * gain;
               addSample(i, v, v * 0.92);
             }
           }
-
+    
+          // 8. Heavy Barbell Crash + Comic Boing
           function addBarbellCrash(timeSec) {
             const startIdx = Math.floor(timeSec * SAMPLE_RATE);
             const len = Math.floor(1.1 * SAMPLE_RATE);
             let lp = 0;
             for (let n = 0; n < len; n++) {
               const t = n / SAMPLE_RATE;
-              const thud = Math.sin(2 * Math.PI * (90 * Math.exp(-t * 16) + 28) * t) * Math.exp(-t * 5.5) * 0.8;
-              const clang = (Math.sin(2 * Math.PI * 412 * t) + Math.sin(2 * Math.PI * 637 * t) + Math.sin(2 * Math.PI * 981 * t)) * Math.exp(-t * 7.5) * 0.25;
+              const thud = Math.sin(2 * Math.PI * (90 * Math.exp(-t * 16) + 28) * t) * Math.exp(-t * 5.5) * 0.78;
+              const clang = (Math.sin(2 * Math.PI * 412 * t) + Math.sin(2 * Math.PI * 637 * t) + Math.sin(2 * Math.PI * 981 * t)) * Math.exp(-t * 7.5) * 0.24;
               lp = lp * 0.65 + rand() * 0.35;
-              const crunch = lp * Math.exp(-t * 10) * 0.45;
-              const boing = Math.sin(2 * Math.PI * (180 + 95 * Math.sin(2 * Math.PI * 11 * t)) * t) * Math.exp(-t * 3.8) * 0.22;
+              const crunch = lp * Math.exp(-t * 10) * 0.42;
+              const boing = Math.sin(2 * Math.PI * (180 + 95 * Math.sin(2 * Math.PI * 11 * t)) * t) * Math.exp(-t * 3.8) * 0.2;
               const v = clamp(thud + clang + crunch + boing);
               addSample(startIdx + n, v, v);
             }
           }
-
-          function addFeverDreamLaugh(startSec, endSec, gain = 0.34) {
+    
+          // 9. Fever-Dream Surreal Mocking Laugh Chorus
+          function addFeverDreamLaugh(startSec, endSec, gain = 0.32) {
             const startIdx = Math.floor(startSec * SAMPLE_RATE);
             const endIdx = Math.floor(endSec * SAMPLE_RATE);
             let phase = 0;
             for (let i = startIdx; i < endIdx; i++) {
               const t = (i - startIdx) / SAMPLE_RATE;
               const prog = (i - startIdx) / (endIdx - startIdx);
-              const haRate = 7.5 + prog * 4.5;
+              const haRate = 7.2 + prog * 4.2;
               const haEnv = Math.pow(Math.max(0, Math.sin(Math.PI * haRate * t)), 1.6);
-              const pitch = (480 - prog * 110) + 190 * Math.sin(2 * Math.PI * (haRate * 0.5) * t) + 70 * Math.sin(2 * Math.PI * 22 * t);
+              const pitch = (470 - prog * 105) + 185 * Math.sin(2 * Math.PI * (haRate * 0.5) * t) + 65 * Math.sin(2 * Math.PI * 20 * t);
               phase += (2 * Math.PI * Math.max(120, pitch)) / SAMPLE_RATE;
-              const wave = Math.tanh((Math.sin(phase) + 0.6 * Math.sin(phase * 2.02) + 0.3 * Math.sin(phase * 3.01)) * 1.3);
+              const wave = Math.tanh((Math.sin(phase) + 0.55 * Math.sin(phase * 2.02) + 0.28 * Math.sin(phase * 3.01)) * 1.25);
               const pan = 0.5 + 0.45 * Math.sin(2 * Math.PI * 3.2 * t);
               const fade = Math.min(1, t * 8, (endSec - startSec - t) * 14);
               const v = wave * haEnv * gain * Math.max(0, fade);
               addSample(i, v * (1.4 - pan), v * (0.6 + pan));
             }
           }
-
+    
+          // 10. Record Scratch (Reality Snap)
           function addRecordScratch(timeSec) {
             const startIdx = Math.floor(timeSec * SAMPLE_RATE);
             const len = Math.floor(0.28 * SAMPLE_RATE);
@@ -300,7 +358,8 @@ jobs:
               addSample(startIdx + n, v, v);
             }
           }
-
+    
+          // 11. Cute Polite Chime ("NEED HELP?")
           function addPoliteChime(timeSec) {
             const notes = [
               { offset: 0.0, freq: 880 },
@@ -317,42 +376,50 @@ jobs:
               }
             }
           }
-
+    
+          // 12. Cartoon Rocket-Drop Slide Whistle + Dust Poof Thud
           function addCartoonZipOut(timeSec) {
             const startIdx = Math.floor(timeSec * SAMPLE_RATE);
-            const len = Math.floor(0.55 * SAMPLE_RATE);
+            const len = Math.floor(0.52 * SAMPLE_RATE);
             let phase = 0;
             for (let n = 0; n < len; n++) {
               const t = n / SAMPLE_RATE;
-              const freq = 2400 * Math.exp(-t * 6.2) + 120;
+              const freq = 2400 * Math.exp(-t * 6.4) + 120;
               phase += (2 * Math.PI * freq) / SAMPLE_RATE;
-              const env = Math.min(1, t * 60) * Math.exp(-t * 3.5);
-              const whistle = Math.sin(phase) * env * 0.52;
-              const whoosh = rand() * Math.exp(-t * 9) * 0.25;
+              const env = Math.min(1, t * 65) * Math.exp(-t * 3.6);
+              const whistle = Math.sin(phase) * env * 0.5;
+              const whoosh = rand() * Math.exp(-t * 9) * 0.28;
               addSample(startIdx + n, whistle + whoosh, whistle + whoosh);
             }
-            addVineBoom(timeSec + 0.22, 0.72);
+            addVineBoom(timeSec + 0.2, 0.72);
           }
-
-          // Synced Timeline Audio Arrangement (30fps / 960 frames)
-          addLofiSegment(0.0, 2.25, 0.26);
-          addVineBoom(2.2, 0.85);
-          addPanicTicks(2.5, 4.7, 15, 0.24);
-          addVineBoom(4.5, 0.82);
-          addVineBoom(6.85, 0.78);
-          addPanicTicks(7.9, 10.6, 17, 0.26);
-          addTensionDrone(10.6, 17.8, 0.35);
-          addVineBoom(12.6, 0.9);
-          addWaterfall(15.6, 18.0, 0.38);
-          addBarbellCrash(18.0);
-          addVineBoom(19.65, 0.88);
-          addFeverDreamLaugh(20.1, 23.9, 0.36);
-          addRecordScratch(24.0);
+    
+          // === Timeline Audio Arrangement (Synced to 30fps / 960 frames) ===
+          addLofiSegment(0.0, 2.15, 0.26);
+          addWeightClank(0.75, 0.2);
+          addWeightClank(1.5, 0.22);
+          addSnapWhoosh(1.92, 0.26);
+          addVineBoom(2.15, 0.82);                       // Shot 1 -> Glare snap
+          addAnxiousHeartbeat(2.4, 4.45, 110, 165, 0.44);// Shot 2 -> Heartbeat panic!
+          addSnapWhoosh(4.32, 0.25);
+          addVineBoom(4.45, 0.8);                        // Angry Girl flash cut
+          addSnapWhoosh(6.72, 0.26);
+          addVineBoom(6.85, 0.78);                       // Shot 3 -> Buff Bro side-eye
+          addAnxiousHeartbeat(7.85, 10.6, 125, 190, 0.48);// Shot 4 -> Melting + shy 👉👈
+          addTensionDrone(10.6, 17.8, 0.32);             // Shot 5-6 -> Imagined judgment + lift
+          addVineBoom(12.55, 0.88);                      // Giant plates slam
+          addWaterfall(15.65, 18.0, 0.35);               // Overhead press tear waterfall
+          addBarbellCrash(18.0);                         // Shot 7 -> Barbell crash
+          addSnapWhoosh(19.55, 0.26);
+          addVineBoom(19.65, 0.85);                      // Girl laughs & points cut
+          addFeverDreamLaugh(20.1, 23.9, 0.34);          // Shot 8 -> Spiral fever dream
+          addRecordScratch(24.0);                        // Shot 9 -> Snap back to reality!
           addLofiSegment(24.3, 28.9, 0.25);
-          addVineBoom(27.0, 0.78);
-          addPoliteChime(28.55);
-          addCartoonZipOut(30.0);
-
+          addWeightClank(26.1, 0.18);
+          addVineBoom(27.0, 0.76);                       // Empty barbell zoom-out reveal
+          addPoliteChime(28.55);                         // Shot 10 -> "NEED HELP?"
+          addCartoonZipOut(30.0);                        // Rocket zip exit punchline!
+    
           const dataSize = TOTAL_SAMPLES * 4;
           const buffer = Buffer.alloc(44 + dataSize);
           buffer.write("RIFF", 0);
@@ -368,7 +435,7 @@ jobs:
           buffer.writeUInt16LE(16, 34);
           buffer.write("data", 36);
           buffer.writeUInt32LE(dataSize, 40);
-
+    
           let offset = 44;
           for (let i = 0; i < TOTAL_SAMPLES; i++) {
             const l = Math.round(clamp(Math.tanh(left[i] * 0.92)) * 32767);
@@ -377,125 +444,137 @@ jobs:
             buffer.writeInt16LE(r, offset + 2);
             offset += 4;
           }
-
+    
           const outPath = path.join("public", "soundtrack.wav");
           fs.writeFileSync(outPath, buffer);
-          console.log(`Generated soundtrack WAV: ${outPath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
+          console.log(`Generated v4 soundtrack WAV: ${outPath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
           EOF
-
+    
           # --------------------------------------------------------------------
-          # 5. Clean Warm Doodle Palette & Motion Helpers (src/utils/animation.ts)
+          # 5. Vibrant 2D Illustration Palette & Motion Helpers (src/utils/animation.ts)
           # --------------------------------------------------------------------
           cat << 'EOF' > gym-anim/src/utils/animation.ts
           export const PALETTE = {
-            // Warm cozy paper/comic background (matches Dood Happens vibe)
-            bgPaper: "#F0E5C8",
-            bgFloor: "#E5D6B2",
-            bgFloorLine: "#D4C29A",
-            bgWall: "#E6D9B8",
-            bgWindow: "#FAF4E4",
-            cityFar: "#EAE0C3",
+            // Warm comic studio background
+            bgPaper: "#F2E7CA",
+            bgFloor: "#E7D9B4",
+            bgFloorLine: "#D7C59A",
+            bgWall: "#ECE0C0",
+            bgWindow: "#FCF7EA",
+            cityFar: "#E9DFC4",
             cityNear: "#DDD0AE",
-
-            // Gym steel & weights (soft warm contrast so characters pop!)
-            machineFrame: "#D5C59D",
-            machinePad: "#9B8D73",
-            barSteel: "#C6C2B7",
-            plateDark: "#4B505B",
-            plateRim: "#393D46",
-            ink: "#1E1A17",
-
-            // Bright crisp character colors (renders pure white with NoToneMapping!)
-            skin: "#FFFFFF",
-            blush: "#F6A7A7",
-            heroShirt: "#FAFAF5",
-            heroShorts: "#4A5568",
+    
+            // Gym equipment & rubber flooring
+            rubberMat: "#3B4049",
+            rubberMatEdge: "#2A2E35",
+            mirrorGlass: "#DCE9EE",
+            mirrorGlint: "#FFFFFF",
+            machineFrame: "#D8C79E",
+            machineShadow: "#C2B087",
+            machinePad: "#8E7E66",
+            barSteel: "#CFD0D4",
+            plateDark: "#454B57",
+            plateRim: "#333842",
+            lampShade: "#464B55",
+            lampGlow: "#FFF7D1",
+            ink: "#1B1715",
+    
+            // Bright crisp 2D doodle character colors (100% unlit -> zero muddy gray!)
+            skin: "#FFFDF9",
+            blush: "#F99E9E",
+            sockWhite: "#FFFFFF",
+    
+            // Overthinker: distinct pastel sky-blue tee + dark collar so he NEVER looks shirtless!
+            heroShirt: "#D7E8F7",
+            heroShirtTrim: "#7CA4C7",
+            heroShorts: "#4A566B",
             heroShoes: "#FFFFFF",
-            heroSole: "#596272",
-
-            girlHair: "#2A2522",
-            girlTop: "#EB8B82",
-            girlLeggings: "#3B4252",
+            heroSole: "#535E70",
+    
+            // Gym Girl: coral athletic top + slate leggings + crisp white towel
+            girlHair: "#2A2421",
+            girlTop: "#F08278",
+            girlTopTrim: "#CC6158",
+            girlLeggings: "#3B4354",
             girlTowel: "#FFFFFF",
-
-            broHair: "#2A2522",
-            broTank: "#424957",
-            broShorts: "#2E333E",
-            broShoes: "#F4F2EC",
-
-            helperHair: "#5E4234",
-            helperTop: "#7FC0AA",
-            helperShorts: "#3B4252",
-
-            sweatBlue: "#5BC8FF",
-            sweatLight: "#BBEAFF",
-            speedRed: "#D83C30",
+    
+            // Buff Bro: charcoal gym tank + red headband + navy shorts
+            broHair: "#282320",
+            broHeadband: "#DF4E42",
+            broTank: "#444C5C",
+            broTankTrim: "#2E3440",
+            broShorts: "#2C3340",
+            broShoes: "#F7F5EE",
+    
+            // Helper Girl: mint athletic top + chestnut bob hair
+            helperHair: "#5E3F30",
+            helperTop: "#7DC4AE",
+            helperTopTrim: "#5AA08B",
+            helperShorts: "#3D4657",
+    
+            sweatBlue: "#54C7FF",
+            sweatLight: "#C7EEFF",
+            dreadPurple: "#6E5A8A",
+            speedRed: "#DC3B2F",
+            feverBg: "#241322",
+            feverSpiral: "#6B1D36",
           } as const;
-
+    
           export function clamp01(v: number): number {
             return Math.max(0, Math.min(1, v));
           }
-
+    
           export function segProgress(frame: number, start: number, end: number): number {
             return clamp01((frame - start) / Math.max(1, end - start));
           }
-
+    
           export function smoothStep(t: number): number {
             const x = clamp01(t);
             return x * x * (3 - 2 * x);
           }
-
+    
           export function easeOutBack(t: number): number {
             const x = clamp01(t);
             const c1 = 1.70158;
             const c3 = c1 + 1;
             return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
           }
-
+    
           export function lerp(a: number, b: number, t: number): number {
             return a + (b - a) * clamp01(t);
           }
-
-          export function boilJitter(frame: number, seed: number, amp = 0.0018): number {
+    
+          export function boilJitter(frame: number, seed: number, amp = 0.0016): number {
             const step = Math.floor(frame / 3);
             const raw = Math.sin(step * 12.9898 + seed * 78.233) * 43758.5453;
             return ((raw - Math.floor(raw)) * 2 - 1) * amp;
           }
-
+    
           export function cameraShake(frame: number, intensity: number): [number, number, number] {
             if (intensity <= 0.0001) return [0, 0, 0];
             const x = Math.sin(frame * 2.71) * Math.cos(frame * 4.33) * intensity;
             const y = Math.cos(frame * 3.17) * Math.sin(frame * 5.19) * intensity;
-            const r = Math.sin(frame * 3.89) * intensity * 0.08;
+            const r = Math.sin(frame * 3.89) * intensity * 0.075;
             return [x, y, r];
           }
+    
+          // Natural cartoon eye blink trigger (returns true for 3 frames every ~75 frames)
+          export function isNaturalBlink(frame: number, offset = 0): boolean {
+            const cycle = (frame + offset) % 78;
+            return cycle >= 74;
+          }
           EOF
-
+    
           # --------------------------------------------------------------------
-          # 6. Smooth Sculpted 2D-Ink Primitives (src/scene/ToonMaterial.tsx)
-          #    Includes SmoothTube (seamless rubber-hose limbs!) & SmoothLathe (organic torsos/hair!)
+          # 6. Crisp Unlit 2D Ink Primitives (src/scene/ToonMaterial.tsx)
+          #    Uses meshBasicMaterial for 100% pure bright 2D colors (ZERO gray muddiness!)
+          #    + SmoothTube (noodle limbs) + SmoothLathe (sculpted bodies) + Canvas Posters
           # --------------------------------------------------------------------
           cat << 'EOF' > gym-anim/src/scene/ToonMaterial.tsx
           import React, { useEffect, useMemo } from "react";
           import * as THREE from "three";
           import { PALETTE, boilJitter } from "../utils/animation";
-
-          let cachedGradientMap: THREE.DataTexture | null = null;
-
-          export function useToonGradient(): THREE.DataTexture {
-            return useMemo(() => {
-              if (cachedGradientMap) return cachedGradientMap;
-              // Soft 2-tone bright illustration shading (minimal dark shadow muddiness)
-              const colors = new Uint8Array([228, 255]);
-              const tex = new THREE.DataTexture(colors, 2, 1, THREE.RedFormat);
-              tex.minFilter = THREE.NearestFilter;
-              tex.magFilter = THREE.NearestFilter;
-              tex.needsUpdate = true;
-              cachedGradientMap = tex;
-              return tex;
-            }, []);
-          }
-
+    
           interface BaseInkProps {
             position?: [number, number, number];
             rotation?: [number, number, number];
@@ -506,7 +585,7 @@ jobs:
             frame?: number;
             seed?: number;
           }
-
+    
           export const InkBox: React.FC<BaseInkProps & { args: [number, number, number] }> = ({
             args,
             position = [0, 0, 0],
@@ -518,13 +597,12 @@ jobs:
             frame = 0,
             seed = 1,
           }) => {
-            const grad = useToonGradient();
-            const j = boilJitter(frame, seed, 0.0014);
+            const j = boilJitter(frame, seed, 0.0012);
             return (
               <group position={position} rotation={rotation} scale={scale}>
                 <mesh>
                   <boxGeometry args={args} />
-                  <meshToonMaterial color={color} gradientMap={grad} />
+                  <meshBasicMaterial color={color} />
                 </mesh>
                 {outline > 0 && (
                   <mesh position={[j, -j, 0]}>
@@ -535,7 +613,7 @@ jobs:
               </group>
             );
           };
-
+    
           export const InkSphere: React.FC<BaseInkProps & { args: [number, number?, number?] }> = ({
             args,
             position = [0, 0, 0],
@@ -547,14 +625,13 @@ jobs:
             frame = 0,
             seed = 2,
           }) => {
-            const grad = useToonGradient();
             const [r, w = 26, h = 20] = args;
-            const j = boilJitter(frame, seed, 0.0014);
+            const j = boilJitter(frame, seed, 0.0012);
             return (
               <group position={position} rotation={rotation} scale={scale}>
                 <mesh>
                   <sphereGeometry args={[r, w, h]} />
-                  <meshToonMaterial color={color} gradientMap={grad} />
+                  <meshBasicMaterial color={color} />
                 </mesh>
                 {outline > 0 && (
                   <mesh position={[j, -j, 0]}>
@@ -565,7 +642,7 @@ jobs:
               </group>
             );
           };
-
+    
           export const InkCylinder: React.FC<BaseInkProps & { args: [number, number, number, number?] }> = ({
             args,
             position = [0, 0, 0],
@@ -577,14 +654,13 @@ jobs:
             frame = 0,
             seed = 3,
           }) => {
-            const grad = useToonGradient();
             const [rt, rb, h, seg = 20] = args;
-            const j = boilJitter(frame, seed, 0.0013);
+            const j = boilJitter(frame, seed, 0.0011);
             return (
               <group position={position} rotation={rotation} scale={scale}>
                 <mesh>
                   <cylinderGeometry args={[rt, rb, h, seg]} />
-                  <meshToonMaterial color={color} gradientMap={grad} />
+                  <meshBasicMaterial color={color} />
                 </mesh>
                 {outline > 0 && (
                   <mesh position={[j, 0, 0]}>
@@ -595,38 +671,34 @@ jobs:
               </group>
             );
           };
-
-          export const InkCapsule: React.FC<BaseInkProps & { args: [number, number, number?, number?] }> = ({
+    
+          export const InkTorus: React.FC<BaseInkProps & { args: [number, number, number?, number?, number?] }> = ({
             args,
             position = [0, 0, 0],
             rotation = [0, 0, 0],
             scale = [1, 1, 1],
-            color = PALETTE.skin,
-            outline = 0.013,
+            color = PALETTE.heroShirtTrim,
+            outline = 0.008,
             outlineColor = PALETTE.ink,
-            frame = 0,
-            seed = 4,
           }) => {
-            const grad = useToonGradient();
-            const [r, len, capSeg = 8, radSeg = 16] = args;
-            const j = boilJitter(frame, seed, 0.0013);
+            const [r, tube, radSeg = 12, tubSeg = 24, arc = Math.PI * 2] = args;
             return (
               <group position={position} rotation={rotation} scale={scale}>
                 <mesh>
-                  <capsuleGeometry args={[r, len, capSeg, radSeg]} />
-                  <meshToonMaterial color={color} gradientMap={grad} />
+                  <torusGeometry args={[r, tube, radSeg, tubSeg, arc]} />
+                  <meshBasicMaterial color={color} />
                 </mesh>
                 {outline > 0 && (
-                  <mesh position={[j, -j, 0]}>
-                    <capsuleGeometry args={[r + outline, len + outline * 0.2, capSeg, radSeg]} />
+                  <mesh>
+                    <torusGeometry args={[r, tube + outline, radSeg, tubSeg, arc]} />
                     <meshBasicMaterial color={outlineColor} side={THREE.BackSide} />
                   </mesh>
                 )}
               </group>
             );
           };
-
-          // Smooth Continuous Curved Noodle Limb (ZERO broken elbow/knee seams!)
+    
+          // Seamless Continuous Curved Noodle Limb (ZERO broken elbow/knee seams!)
           export const SmoothTube: React.FC<{
             points: [number, number, number][];
             radius: number;
@@ -644,9 +716,8 @@ jobs:
             endCap = true,
             startCap = true,
           }) => {
-            const grad = useToonGradient();
             const key = points.map((p) => p.map((n) => n.toFixed(3)).join(",")).join("|");
-
+    
             const { mainGeo, outGeo } = useMemo(() => {
               const vecs = points.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
               const curve = new THREE.CatmullRomCurve3(vecs);
@@ -655,21 +726,21 @@ jobs:
                 outGeo: outline > 0 ? new THREE.TubeGeometry(curve, segments, radius + outline, 14, false) : null,
               };
             }, [key, radius, outline, segments]);
-
+    
             useEffect(() => {
               return () => {
                 mainGeo.dispose();
                 outGeo?.dispose();
               };
             }, [mainGeo, outGeo]);
-
+    
             const first = points[0];
             const last = points[points.length - 1];
-
+    
             return (
               <group>
                 <mesh geometry={mainGeo}>
-                  <meshToonMaterial color={color} gradientMap={grad} />
+                  <meshBasicMaterial color={color} />
                 </mesh>
                 {outGeo && (
                   <mesh geometry={outGeo}>
@@ -680,7 +751,7 @@ jobs:
                   <group position={first}>
                     <mesh>
                       <sphereGeometry args={[radius, 12, 10]} />
-                      <meshToonMaterial color={color} gradientMap={grad} />
+                      <meshBasicMaterial color={color} />
                     </mesh>
                     {outline > 0 && (
                       <mesh>
@@ -694,7 +765,7 @@ jobs:
                   <group position={last}>
                     <mesh>
                       <sphereGeometry args={[radius, 12, 10]} />
-                      <meshToonMaterial color={color} gradientMap={grad} />
+                      <meshBasicMaterial color={color} />
                     </mesh>
                     {outline > 0 && (
                       <mesh>
@@ -707,10 +778,10 @@ jobs:
               </group>
             );
           };
-
-          // Smooth Organic Sculpted Torso / Hair / Shorts using LatheGeometry!
+    
+          // Organic Sculpted Torso / Shorts / Sleeves using LatheGeometry
           export const SmoothLathe: React.FC<{
-            profile: [number, number][]; // [radius, y] pairs from bottom to top
+            profile: [number, number][];
             position?: [number, number, number];
             rotation?: [number, number, number];
             scale?: [number, number, number];
@@ -726,13 +797,12 @@ jobs:
             outline = 0.014,
             radialSegments = 24,
           }) => {
-            const grad = useToonGradient();
             const key = profile.map((p) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`).join("|");
-
+    
             const { mainGeo, outGeo } = useMemo(() => {
               const pts = profile.map(([r, y]) => new THREE.Vector2(Math.max(0.001, r), y));
               const outPts = profile.map(([r, y], idx) => {
-                const yShift = idx === 0 ? -outline * 0.7 : idx === profile.length - 1 ? outline * 0.7 : 0;
+                const yShift = idx === 0 ? -outline * 0.65 : idx === profile.length - 1 ? outline * 0.65 : 0;
                 return new THREE.Vector2(r <= 0.003 ? 0.001 : r + outline, y + yShift);
               });
               return {
@@ -740,18 +810,18 @@ jobs:
                 outGeo: outline > 0 ? new THREE.LatheGeometry(outPts, radialSegments) : null,
               };
             }, [key, outline, radialSegments]);
-
+    
             useEffect(() => {
               return () => {
                 mainGeo.dispose();
                 outGeo?.dispose();
               };
             }, [mainGeo, outGeo]);
-
+    
             return (
               <group position={position} rotation={rotation} scale={scale}>
                 <mesh geometry={mainGeo}>
-                  <meshToonMaterial color={color} gradientMap={grad} />
+                  <meshBasicMaterial color={color} />
                 </mesh>
                 {outGeo && (
                   <mesh geometry={outGeo}>
@@ -761,21 +831,74 @@ jobs:
               </group>
             );
           };
+    
+          // Crisp 2D Canvas Poster Sign for Gym Wall Props
+          export const GymPoster: React.FC<{
+            position: [number, number, number];
+            lines: string[];
+            bg: string;
+            accent: string;
+            size?: [number, number];
+          }> = ({ position, lines, bg, accent, size = [0.95, 1.25] }) => {
+            const tex = useMemo(() => {
+              const canvas = document.createElement("canvas");
+              canvas.width = 256;
+              canvas.height = 320;
+              const ctx = canvas.getContext("2d");
+              if (ctx) {
+                ctx.fillStyle = bg;
+                ctx.fillRect(0, 0, 256, 320);
+                ctx.strokeStyle = PALETTE.ink;
+                ctx.lineWidth = 14;
+                ctx.strokeRect(7, 7, 242, 306);
+                ctx.fillStyle = accent;
+                ctx.fillRect(24, 24, 208, 44);
+                ctx.fillStyle = PALETTE.ink;
+                ctx.font = "900 32px 'DejaVu Sans', sans-serif";
+                ctx.textAlign = "center";
+                lines.forEach((line, i) => {
+                  ctx.fillText(line, 128, 128 + i * 48);
+                });
+                // Cute dumbbell doodle at bottom of poster
+                ctx.fillStyle = PALETTE.ink;
+                ctx.fillRect(78, 258, 100, 12);
+                ctx.fillRect(62, 240, 20, 48);
+                ctx.fillRect(174, 240, 20, 48);
+              }
+              const texture = new THREE.CanvasTexture(canvas);
+              texture.needsUpdate = true;
+              return texture;
+            }, [lines.join("|"), bg, accent]);
+    
+            useEffect(() => {
+              return () => tex.dispose();
+            }, [tex]);
+    
+            return (
+              <mesh position={position}>
+                <planeGeometry args={size} />
+                <meshBasicMaterial map={tex} />
+              </mesh>
+            );
+          };
           EOF
-
+    
           # --------------------------------------------------------------------
-          # 7. Clean Wide 3D Gym Environment (src/scene/GymEnvironment.tsx)
+          # 7. Rich Detailed Gym Environment (src/scene/GymEnvironment.tsx)
+          #    Rubber Mats, Wall Mirrors, Comedy Posters, Clock, Pendant Lamps,
+          #    Weight Tree, Water Bottle + Towel, Lat Pulldown & Squat Racks
           # --------------------------------------------------------------------
           cat << 'EOF' > gym-anim/src/scene/GymEnvironment.tsx
           import React from "react";
-          import { InkBox, InkCylinder, InkSphere } from "./ToonMaterial";
+          import { GymPoster, InkBox, InkCylinder, InkSphere } from "./ToonMaterial";
           import { PALETTE } from "../utils/animation";
-
+    
           interface GymEnvProps {
             frame: number;
             pulldownProgress: number;
+            visible?: boolean;
           }
-
+    
           export const LatPulldownMachine: React.FC<{
             position?: [number, number, number];
             rotation?: [number, number, number];
@@ -785,25 +908,22 @@ jobs:
             const barY = 2.02 - pulldownProgress * 0.56;
             const stackY = 0.52 + pulldownProgress * 0.44;
             const cableLen = Math.max(0.12, 2.72 - barY);
-
+    
             return (
               <group position={position} rotation={rotation}>
-                {/* Floor shadow */}
-                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0.15, 0.008, 0]}>
-                  <circleGeometry args={[1.15, 24]} />
-                  <meshBasicMaterial color="#CFC099" transparent opacity={0.5} />
-                </mesh>
-
+                {/* Black Rubber Gym Mat underneath */}
+                <InkBox args={[2.35, 0.03, 1.5]} position={[0.15, 0.015, 0]} color={PALETTE.rubberMat} outline={0.01} frame={frame} seed={9} />
+    
                 {/* Base frame */}
-                <InkBox args={[1.65, 0.08, 0.76]} position={[0.15, 0.04, 0]} color={PALETTE.machineFrame} outline={0.013} frame={frame} seed={10} />
+                <InkBox args={[1.65, 0.08, 0.76]} position={[0.15, 0.07, 0]} color={PALETTE.machineFrame} outline={0.013} frame={frame} seed={10} />
                 {/* Weight cage uprights */}
-                <InkBox args={[0.09, 2.72, 0.09]} position={[0.56, 1.4, -0.22]} color={PALETTE.machineFrame} outline={0.013} frame={frame} seed={11} />
-                <InkBox args={[0.09, 2.72, 0.09]} position={[0.56, 1.4, 0.22]} color={PALETTE.machineFrame} outline={0.013} frame={frame} seed={12} />
-                <InkBox args={[0.09, 2.72, 0.09]} position={[0.94, 1.4, 0]} color={PALETTE.machineFrame} outline={0.013} frame={frame} seed={13} />
+                <InkBox args={[0.09, 2.72, 0.09]} position={[0.56, 1.43, -0.22]} color={PALETTE.machineFrame} outline={0.013} frame={frame} seed={11} />
+                <InkBox args={[0.09, 2.72, 0.09]} position={[0.56, 1.43, 0.22]} color={PALETTE.machineFrame} outline={0.013} frame={frame} seed={12} />
+                <InkBox args={[0.09, 2.72, 0.09]} position={[0.94, 1.43, 0]} color={PALETTE.machineFrame} outline={0.013} frame={frame} seed={13} />
                 {/* Top beam + pulley */}
-                <InkBox args={[1.45, 0.11, 0.12]} position={[0.3, 2.74, 0]} color={PALETTE.machineFrame} outline={0.013} frame={frame} seed={14} />
-                <InkCylinder args={[0.1, 0.1, 0.045, 16]} position={[-0.22, 2.72, 0]} rotation={[Math.PI / 2, 0, 0]} color={PALETTE.plateDark} outline={0.01} frame={frame} seed={15} />
-
+                <InkBox args={[1.45, 0.11, 0.12]} position={[0.3, 2.77, 0]} color={PALETTE.machineFrame} outline={0.013} frame={frame} seed={14} />
+                <InkCylinder args={[0.1, 0.1, 0.045, 16]} position={[-0.22, 2.75, 0]} rotation={[Math.PI / 2, 0, 0]} color={PALETTE.plateDark} outline={0.01} frame={frame} seed={15} />
+    
                 {/* Weight stack */}
                 {[0, 1, 2, 3, 4, 5].map((idx) => (
                   <InkBox
@@ -816,45 +936,49 @@ jobs:
                     seed={20 + idx}
                   />
                 ))}
-
+    
                 {/* Cable */}
                 <InkCylinder args={[0.011, 0.011, cableLen, 8]} position={[-0.22, barY + cableLen / 2, 0]} color={PALETTE.ink} outline={0} />
-
+    
                 {/* Lat Bar */}
                 <group position={[-0.22, barY, 0]}>
                   <InkCylinder args={[0.02, 0.02, 0.82, 10]} rotation={[Math.PI / 2, 0, 0]} color={PALETTE.barSteel} outline={0.01} frame={frame} seed={30} />
                   <InkCylinder args={[0.021, 0.021, 0.22, 10]} position={[0, -0.06, 0.45]} rotation={[Math.PI / 2 + 0.5, 0, 0]} color={PALETTE.plateDark} outline={0.01} frame={frame} seed={31} />
                   <InkCylinder args={[0.021, 0.021, 0.22, 10]} position={[0, -0.06, -0.45]} rotation={[Math.PI / 2 - 0.5, 0, 0]} color={PALETTE.plateDark} outline={0.01} frame={frame} seed={32} />
                 </group>
-
-                {/* Seat Post & Padded Seat */}
-                <InkBox args={[0.08, 0.56, 0.08]} position={[-0.4, 0.32, 0]} color={PALETTE.machineFrame} outline={0.012} frame={frame} seed={35} />
-                <InkBox args={[0.48, 0.1, 0.4]} position={[-0.4, 0.62, 0]} color={PALETTE.machinePad} outline={0.013} frame={frame} seed={36} />
-                {/* Knee Roller Pad */}
-                <InkBox args={[0.065, 0.44, 0.065]} position={[0.05, 0.72, 0]} color={PALETTE.machineFrame} outline={0.01} frame={frame} seed={37} />
-                <InkCylinder args={[0.072, 0.072, 0.54, 14]} position={[0.05, 0.94, 0]} rotation={[Math.PI / 2, 0, 0]} color={PALETTE.machinePad} outline={0.012} frame={frame} seed={38} />
+    
+                {/* Seat & Knee Pad */}
+                <InkBox args={[0.08, 0.56, 0.08]} position={[-0.4, 0.35, 0]} color={PALETTE.machineFrame} outline={0.012} frame={frame} seed={35} />
+                <InkBox args={[0.48, 0.1, 0.4]} position={[-0.4, 0.65, 0]} color={PALETTE.machinePad} outline={0.013} frame={frame} seed={36} />
+                <InkBox args={[0.065, 0.44, 0.065]} position={[0.05, 0.75, 0]} color={PALETTE.machineFrame} outline={0.01} frame={frame} seed={37} />
+                <InkCylinder args={[0.072, 0.072, 0.54, 14]} position={[0.05, 0.97, 0]} rotation={[Math.PI / 2, 0, 0]} color={PALETTE.machinePad} outline={0.012} frame={frame} seed={38} />
               </group>
             );
           };
-
+    
           export const SquatRack: React.FC<{
             position?: [number, number, number];
             rotation?: [number, number, number];
             frame: number;
-          }> = ({ position = [0, 0, 0], rotation = [0, 0, 0], frame }) => {
+            withBottle?: boolean;
+          }> = ({ position = [0, 0, 0], rotation = [0, 0, 0], frame, withBottle = false }) => {
             return (
               <group position={position} rotation={rotation}>
-                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
-                  <planeGeometry args={[2.1, 1.35]} />
-                  <meshBasicMaterial color="#CFC099" transparent opacity={0.45} />
+                {/* High-contrast Rubber Lifting Platform Mat */}
+                <InkBox args={[2.55, 0.032, 1.85]} position={[0, 0.016, 0.15]} color={PALETTE.rubberMat} outline={0.01} frame={frame} seed={39} />
+                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.034, 0.15]}>
+                  <planeGeometry args={[1.55, 1.55]} />
+                  <meshBasicMaterial color="#494F5A" />
                 </mesh>
-                <InkBox args={[0.12, 0.075, 1.35]} position={[-0.88, 0.038, 0]} color={PALETTE.machineFrame} outline={0.013} frame={frame} seed={40} />
-                <InkBox args={[0.12, 0.075, 1.35]} position={[0.88, 0.038, 0]} color={PALETTE.machineFrame} outline={0.013} frame={frame} seed={41} />
-                <InkBox args={[0.11, 2.78, 0.11]} position={[-0.88, 1.43, 0]} color={PALETTE.machineFrame} outline={0.014} frame={frame} seed={42} />
-                <InkBox args={[0.11, 2.78, 0.11]} position={[0.88, 1.43, 0]} color={PALETTE.machineFrame} outline={0.014} frame={frame} seed={43} />
-                <InkBox args={[0.065, 0.13, 0.18]} position={[-0.88, 1.44, 0.09]} color={PALETTE.plateDark} outline={0.01} frame={frame} seed={44} />
-                <InkBox args={[0.065, 0.13, 0.18]} position={[0.88, 1.44, 0.09]} color={PALETTE.plateDark} outline={0.01} frame={frame} seed={45} />
-                {[0.55, 0.9, 1.25, 1.65, 2.0, 2.35].map((y, idx) => (
+    
+                {/* Rack steel base & uprights */}
+                <InkBox args={[0.12, 0.075, 1.35]} position={[-0.88, 0.07, 0]} color={PALETTE.machineFrame} outline={0.013} frame={frame} seed={40} />
+                <InkBox args={[0.12, 0.075, 1.35]} position={[0.88, 0.07, 0]} color={PALETTE.machineFrame} outline={0.013} frame={frame} seed={41} />
+                <InkBox args={[0.11, 2.78, 0.11]} position={[-0.88, 1.46, 0]} color={PALETTE.machineFrame} outline={0.014} frame={frame} seed={42} />
+                <InkBox args={[0.11, 2.78, 0.11]} position={[0.88, 1.46, 0]} color={PALETTE.machineFrame} outline={0.014} frame={frame} seed={43} />
+                <InkBox args={[0.065, 0.13, 0.18]} position={[-0.88, 1.47, 0.09]} color={PALETTE.plateDark} outline={0.01} frame={frame} seed={44} />
+                <InkBox args={[0.065, 0.13, 0.18]} position={[0.88, 1.47, 0.09]} color={PALETTE.plateDark} outline={0.01} frame={frame} seed={45} />
+                {[0.58, 0.93, 1.28, 1.68, 2.03, 2.38].map((y, idx) => (
                   <React.Fragment key={idx}>
                     <mesh position={[-0.88, y, 0.062]}>
                       <circleGeometry args={[0.018, 10]} />
@@ -866,27 +990,36 @@ jobs:
                     </mesh>
                   </React.Fragment>
                 ))}
-                <InkBox args={[1.9, 0.095, 0.095]} position={[0, 2.76, 0]} color={PALETTE.machineFrame} outline={0.013} frame={frame} seed={46} />
+                <InkBox args={[1.9, 0.095, 0.095]} position={[0, 2.79, 0]} color={PALETTE.machineFrame} outline={0.013} frame={frame} seed={46} />
+    
+                {/* Optional floor water bottle + folded gym towel prop */}
+                {withBottle && (
+                  <group position={[-1.08, 0.032, 0.65]}>
+                    <InkCylinder args={[0.055, 0.055, 0.24, 12]} position={[0, 0.12, 0]} color="#68BCE8" outline={0.01} frame={frame} seed={47} />
+                    <InkCylinder args={[0.032, 0.038, 0.05, 10]} position={[0, 0.26, 0]} color={PALETTE.plateDark} outline={0.008} frame={frame} seed={48} />
+                    <InkBox args={[0.24, 0.055, 0.18]} position={[0.18, 0.028, 0.06]} rotation={[0, 0.3, 0]} color="#FFFFFF" outline={0.009} frame={frame} seed={49} />
+                  </group>
+                )}
               </group>
             );
           };
-
+    
           export const Barbell: React.FC<{
             position?: [number, number, number];
             rotation?: [number, number, number];
-            plateScale?: number; // 0 = empty bar, 1 = normal heavy, 1.65 = giant hallucination plates
+            plateScale?: number;
             bend?: number;
             frame: number;
           }> = ({ position = [0, 0, 0], rotation = [0, 0, 0], plateScale = 1, bend = 0, frame }) => {
             const rOuter = 0.31 * plateScale;
             const rInner = 0.24 * plateScale;
-
+    
             return (
               <group position={position} rotation={rotation}>
                 <InkCylinder args={[0.022, 0.022, 2.48, 12]} rotation={[0, 0, Math.PI / 2]} color={PALETTE.barSteel} outline={0.011} frame={frame} seed={50} />
                 <InkCylinder args={[0.038, 0.038, 0.065, 12]} position={[-0.88, 0, 0]} rotation={[0, 0, Math.PI / 2]} color={PALETTE.plateRim} outline={0.009} frame={frame} seed={51} />
                 <InkCylinder args={[0.038, 0.038, 0.065, 12]} position={[0.88, 0, 0]} rotation={[0, 0, Math.PI / 2]} color={PALETTE.plateRim} outline={0.009} frame={frame} seed={52} />
-
+    
                 {plateScale > 0.05 && (
                   <>
                     {[-1, 1].map((sgn, idx) => (
@@ -924,11 +1057,36 @@ jobs:
               </group>
             );
           };
-
-          export const GymEnvironment: React.FC<GymEnvProps> = ({ frame, pulldownProgress }) => {
+    
+          // Hanging Industrial Gym Ceiling Lamp (fills upper 9:16 composition cleanly!)
+          const PendantLamp: React.FC<{ x: number; z?: number; frame: number; seed: number }> = ({ x, z = -0.3, frame, seed }) => (
+            <group position={[x, 4.15, z]}>
+              <InkCylinder args={[0.015, 0.015, 0.9, 8]} position={[0, 0.45, 0]} color={PALETTE.ink} outline={0} />
+              <InkCylinder args={[0.08, 0.34, 0.24, 16]} position={[0, -0.05, 0]} color={PALETTE.lampShade} outline={0.012} frame={frame} seed={seed} />
+              <InkSphere args={[0.1, 12, 10]} position={[0, -0.14, 0]} color={PALETTE.lampGlow} outline={0.008} frame={frame} seed={seed + 1} />
+            </group>
+          );
+    
+          // Gym Weight Plate Tree
+          const WeightTree: React.FC<{ position: [number, number, number]; frame: number }> = ({ position, frame }) => (
+            <group position={position}>
+              <InkBox args={[0.56, 0.06, 0.56]} position={[0, 0.03, 0]} color={PALETTE.machineFrame} outline={0.011} frame={frame} seed={85} />
+              <InkBox args={[0.09, 1.1, 0.09]} position={[0, 0.58, 0]} color={PALETTE.machineFrame} outline={0.011} frame={frame} seed={86} />
+              {[0.32, 0.68].map((y, idx) => (
+                <React.Fragment key={idx}>
+                  <InkCylinder args={[0.21 - idx * 0.04, 0.21 - idx * 0.04, 0.09, 18]} position={[-0.14, y, 0]} rotation={[0, 0, Math.PI / 2]} color={PALETTE.plateDark} outline={0.012} frame={frame} seed={87 + idx} />
+                  <InkCylinder args={[0.21 - idx * 0.04, 0.21 - idx * 0.04, 0.09, 18]} position={[0.14, y, 0]} rotation={[0, 0, Math.PI / 2]} color={PALETTE.plateDark} outline={0.012} frame={frame} seed={89 + idx} />
+                </React.Fragment>
+              ))}
+            </group>
+          );
+    
+          export const GymEnvironment: React.FC<GymEnvProps> = ({ frame, pulldownProgress, visible = true }) => {
+            if (!visible) return null;
+    
             return (
               <group>
-                {/* Warm Floor */}
+                {/* Warm Studio Floor */}
                 <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
                   <planeGeometry args={[36, 30]} />
                   <meshBasicMaterial color={PALETTE.bgFloor} />
@@ -939,29 +1097,29 @@ jobs:
                     <meshBasicMaterial color={PALETTE.bgFloorLine} />
                   </mesh>
                 ))}
-
+    
                 {/* Back Wall & Baseboard */}
-                <mesh position={[0, 3.8, -3.5]}>
-                  <planeGeometry args={[32, 8]} />
+                <mesh position={[0, 4.2, -3.5]}>
+                  <planeGeometry args={[34, 9]} />
                   <meshBasicMaterial color={PALETTE.bgWall} />
                 </mesh>
-                <InkBox args={[30, 0.22, 0.06]} position={[0, 0.11, -3.46]} color={PALETTE.machineFrame} outline={0.01} frame={frame} seed={60} />
-
-                {/* Wide Panoramic Gym Window */}
-                <mesh position={[0, 2.55, -3.44]}>
-                  <planeGeometry args={[20, 3.5]} />
+                <InkBox args={[32, 0.22, 0.06]} position={[0, 0.11, -3.46]} color={PALETTE.machineFrame} outline={0.01} frame={frame} seed={60} />
+    
+                {/* Upper Panoramic Window Strip (above wall mirrors & posters!) */}
+                <mesh position={[0, 3.35, -3.44]}>
+                  <planeGeometry args={[22, 1.95]} />
                   <meshBasicMaterial color={PALETTE.bgWindow} />
                 </mesh>
                 {[
-                  [-7.5, 1.55, 1.3, 1.9, PALETTE.cityFar],
-                  [-5.6, 2.05, 1.1, 2.8, PALETTE.cityNear],
-                  [-3.8, 1.45, 1.4, 1.7, PALETTE.cityFar],
-                  [-2.0, 1.9, 1.0, 2.4, PALETTE.cityNear],
-                  [-0.4, 1.5, 1.2, 1.8, PALETTE.cityFar],
-                  [1.2, 2.15, 1.1, 3.0, PALETTE.cityNear],
-                  [2.9, 1.65, 1.3, 2.1, PALETTE.cityFar],
-                  [4.7, 1.95, 1.2, 2.6, PALETTE.cityNear],
-                  [6.6, 1.6, 1.4, 1.9, PALETTE.cityFar],
+                  [-7.5, 2.85, 1.3, 1.1, PALETTE.cityFar],
+                  [-5.6, 3.05, 1.1, 1.5, PALETTE.cityNear],
+                  [-3.8, 2.75, 1.4, 0.9, PALETTE.cityFar],
+                  [-2.0, 3.0, 1.0, 1.3, PALETTE.cityNear],
+                  [-0.4, 2.8, 1.2, 1.0, PALETTE.cityFar],
+                  [1.2, 3.1, 1.1, 1.6, PALETTE.cityNear],
+                  [2.9, 2.85, 1.3, 1.1, PALETTE.cityFar],
+                  [4.7, 3.05, 1.2, 1.5, PALETTE.cityNear],
+                  [6.6, 2.8, 1.4, 1.0, PALETTE.cityFar],
                 ].map(([x, y, w, h, col], i) => (
                   <mesh key={i} position={[x as number, y as number, -3.41]}>
                     <planeGeometry args={[w as number, h as number]} />
@@ -969,48 +1127,87 @@ jobs:
                   </mesh>
                 ))}
                 {[-6, -3, 0, 3, 6].map((x, i) => (
-                  <InkBox key={i} args={[0.09, 3.6, 0.07]} position={[x, 2.55, -3.38]} color={PALETTE.machineFrame} outline={0.01} frame={frame} seed={62 + i} />
+                  <InkBox key={i} args={[0.09, 2.0, 0.07]} position={[x, 3.35, -3.38]} color={PALETTE.machineFrame} outline={0.01} frame={frame} seed={62 + i} />
                 ))}
-                <InkBox args={[20.2, 0.13, 0.09]} position={[0, 0.8, -3.36]} color={PALETTE.machineFrame} outline={0.012} frame={frame} seed={68} />
-                <InkBox args={[20.2, 0.13, 0.09]} position={[0, 4.3, -3.36]} color={PALETTE.machineFrame} outline={0.012} frame={frame} seed={69} />
-
-                {/* Potted Gym Plant */}
-                <group position={[-2.25, 0, -2.5]}>
-                  <InkCylinder args={[0.21, 0.15, 0.34, 14]} position={[0, 0.17, 0]} color="#CE9472" outline={0.011} frame={frame} seed={70} />
-                  <InkSphere args={[0.25, 16, 14]} position={[0, 0.5, 0]} scale={[1.1, 1.25, 1]} color="#8BB07C" outline={0.011} frame={frame} seed={71} />
+                <InkBox args={[22.2, 0.13, 0.09]} position={[0, 2.38, -3.36]} color={PALETTE.machineFrame} outline={0.012} frame={frame} seed={68} />
+                <InkBox args={[22.2, 0.13, 0.09]} position={[0, 4.35, -3.36]} color={PALETTE.machineFrame} outline={0.012} frame={frame} seed={69} />
+    
+                {/* Wide Gym Wall Mirrors with Diagonal Comic Reflection Glints */}
+                {[-4.6, 0, 4.6].map((x, i) => (
+                  <group key={i} position={[x, 1.26, -3.42]}>
+                    <InkBox args={[2.9, 1.85, 0.04]} color={PALETTE.mirrorGlass} outline={0.02} frame={frame} seed={92 + i} />
+                    <mesh position={[-0.65, 0.15, 0.026]} rotation={[0, 0, -0.58]}>
+                      <planeGeometry args={[0.16, 1.6]} />
+                      <meshBasicMaterial color={PALETTE.mirrorGlint} transparent opacity={0.55} />
+                    </mesh>
+                    <mesh position={[-0.36, 0.08, 0.026]} rotation={[0, 0, -0.58]}>
+                      <planeGeometry args={[0.06, 1.45]} />
+                      <meshBasicMaterial color={PALETTE.mirrorGlint} transparent opacity={0.45} />
+                    </mesh>
+                  </group>
+                ))}
+    
+                {/* Comedy Gym Wall Posters */}
+                <GymPoster position={[-2.35, 1.48, -3.41]} lines={["DO YOU", "EVEN", "LIFT?"]} bg="#FFF7E2" accent="#F08278" />
+                <GymPoster position={[2.35, 1.48, -3.41]} lines={["RE-RACK", "YOUR", "WEIGHTS!"]} bg="#FFF7E2" accent="#7DC4AE" />
+    
+                {/* Gym Wall Clock (center top) */}
+                <group position={[0, 2.68, -3.3]}>
+                  <InkCylinder args={[0.25, 0.25, 0.05, 22]} rotation={[Math.PI / 2, 0, 0]} color="#FFFFFF" outline={0.016} frame={frame} seed={96} />
+                  <mesh position={[0, 0.06, 0.032]}>
+                    <planeGeometry args={[0.022, 0.13]} />
+                    <meshBasicMaterial color={PALETTE.ink} />
+                  </mesh>
+                  <mesh position={[0.055, 0, 0.032]} rotation={[0, 0, -Math.PI / 2]}>
+                    <planeGeometry args={[0.018, 0.11]} />
+                    <meshBasicMaterial color={PALETTE.speedRed} />
+                  </mesh>
                 </group>
-
-                {/* Background Dumbbell Rack */}
-                <group position={[2.3, 0, -2.55]} rotation={[0, -0.15, 0]}>
+    
+                {/* Overhead Industrial Pendant Lamps */}
+                <PendantLamp x={-4.6} frame={frame} seed={180} />
+                <PendantLamp x={0} frame={frame} seed={182} />
+                <PendantLamp x={4.6} frame={frame} seed={184} />
+    
+                {/* Potted Gym Plant & Weight Plate Tree & Dumbbell Rack */}
+                <group position={[-2.35, 0, -2.55]}>
+                  <InkCylinder args={[0.21, 0.15, 0.34, 14]} position={[0, 0.17, 0]} color="#D39470" outline={0.011} frame={frame} seed={70} />
+                  <InkSphere args={[0.25, 16, 14]} position={[0, 0.5, 0]} scale={[1.1, 1.25, 1]} color="#89B57A" outline={0.011} frame={frame} seed={71} />
+                </group>
+                <WeightTree position={[-1.95, 0, -0.5]} frame={frame} />
+                <group position={[2.35, 0, -2.55]} rotation={[0, -0.15, 0]}>
                   <InkBox args={[1.6, 0.66, 0.4]} position={[0, 0.33, 0]} color={PALETTE.machineFrame} outline={0.012} frame={frame} seed={75} />
                   {[-0.56, -0.19, 0.19, 0.56].map((x, i) => (
                     <InkCylinder key={i} args={[0.08, 0.08, 0.25, 12]} position={[x, 0.72, 0]} rotation={[Math.PI / 2, 0, 0]} color={PALETTE.plateDark} outline={0.01} frame={frame} seed={76 + i} />
                   ))}
                 </group>
-
+    
                 {/* STATION A (Left): Lat Pulldown Machine */}
                 <LatPulldownMachine position={[-4.8, 0, 0.0]} rotation={[0, 0.16, 0]} pulldownProgress={pulldownProgress} frame={frame} />
-
-                {/* STATION B (Center): Overthinker's Squat Rack */}
-                <SquatRack position={[0, 0, 0]} frame={frame} />
-
+    
+                {/* STATION B (Center): Overthinker's Squat Rack (with water bottle + towel) */}
+                <SquatRack position={[0, 0, 0]} frame={frame} withBottle />
+    
                 {/* STATION C (Right): Buff Bro's Squat Rack */}
                 <SquatRack position={[4.8, 0, 0.1]} rotation={[0, -0.16, 0]} frame={frame} />
               </group>
             );
           };
           EOF
-
+    
           # --------------------------------------------------------------------
-          # 8. Organic Noodle-Limbed Cartoon Characters (src/scene/Characters.tsx)
-          #    Smooth LatheGeometry torsos & hair + Continuous TubeGeometry arms/legs
-          #    + Sphere-Hugging Expressive Faces (Zero seams, zero blocky boxes!)
+          # 8. Polished Expressive Cartoon Characters (src/scene/Characters.tsx)
+          #    - Pure bright 2D colors + distinct T-shirt with sleeves & collar
+          #    - Proper shorts legs for Buff Bro + headband + integrated traps
+          #    - Mitten hands with fingers (👉👈 shy pose & mocking point!)
+          #    - White socks + laced sneakers + idle breathing + eye blinks + dread lines
+          #    - Zero crop-top Z-fighting!
           # --------------------------------------------------------------------
           cat << 'EOF' > gym-anim/src/scene/Characters.tsx
           import React from "react";
-          import { InkBox, InkCylinder, InkSphere, SmoothLathe, SmoothTube } from "./ToonMaterial";
-          import { PALETTE } from "../utils/animation";
-
+          import { InkBox, InkCylinder, InkSphere, InkTorus, SmoothLathe, SmoothTube } from "./ToonMaterial";
+          import { PALETTE, isNaturalBlink } from "../utils/animation";
+    
           export type MoodType =
             | "calm"
             | "smile"
@@ -1025,8 +1222,7 @@ jobs:
             | "smug"
             | "pinprick"
             | "blink";
-
-          // Helper to hug facial features seamlessly onto the curved front of a spherical head
+    
           function onHead(x: number, y: number, r: number, lift = 0.01): { pos: [number, number, number]; rot: [number, number, number] } {
             const z = Math.sqrt(Math.max(0.01, r * r - x * x - y * y)) + lift;
             return {
@@ -1034,64 +1230,82 @@ jobs:
               rot: [-Math.atan2(y, r) * 0.85, Math.atan2(x, r) * 0.85, 0],
             };
           }
-
-          // Expressive 2D-on-3D Cartoon Face that wraps smoothly around head sphere
+    
           export const CartoonFace: React.FC<{
             mood: MoodType;
             frame: number;
             headR: number;
             eyeScale?: number;
             blush?: boolean;
-          }> = ({ mood, frame, headR, eyeScale = 1, blush = false }) => {
-            const jx = mood === "panic" || mood === "scream" ? Math.sin(frame * 2.8) * 0.009 : 0;
-            const jy = mood === "panic" || mood === "scream" ? Math.cos(frame * 3.3) * 0.009 : 0;
-
-            const isWide = mood === "panic" || mood === "angry" || mood === "pinprick" || mood === "scream";
-            const eScaleX = (isWide ? 1.24 : mood === "melt" ? 1.12 : 1.0) * eyeScale;
+            blinkOffset?: number;
+          }> = ({ mood, frame, headR, eyeScale = 1, blush = false, blinkOffset = 0 }) => {
+            const autoBlink = (mood === "calm" || mood === "smile") && isNaturalBlink(frame, blinkOffset);
+            const activeMood: MoodType = autoBlink ? "blink" : mood;
+    
+            const jx = activeMood === "panic" || activeMood === "scream" ? Math.sin(frame * 2.8) * 0.009 : 0;
+            const jy = activeMood === "panic" || activeMood === "scream" ? Math.cos(frame * 3.3) * 0.009 : 0;
+    
+            const isWide = activeMood === "panic" || activeMood === "angry" || activeMood === "pinprick" || activeMood === "scream";
+            const eScaleX = (isWide ? 1.24 : activeMood === "melt" ? 1.12 : 1.0) * eyeScale;
             const eScaleY =
-              (mood === "sideeye" || mood === "smug"
-                ? 0.52
-                : mood === "melt"
+              (activeMood === "sideeye" || activeMood === "smug"
+                ? 0.54
+                : activeMood === "melt"
                 ? 1.32
                 : isWide
                 ? 1.26
                 : 1.0) * eyeScale;
-
-            const pupilR = mood === "pinprick" ? 0.01 : mood === "panic" ? 0.015 : mood === "scream" ? 0.013 : 0.023;
+    
+            const pupilR = activeMood === "pinprick" ? 0.01 : activeMood === "panic" ? 0.015 : activeMood === "scream" ? 0.013 : 0.023;
             let px = 0;
             let py = 0;
-            if (mood === "sideeye") px = -0.022;
-            if (mood === "smug") px = 0.02;
-            if (mood === "panic") {
+            if (activeMood === "sideeye") px = -0.022;
+            if (activeMood === "smug") px = 0.02;
+            if (activeMood === "panic") {
               px = Math.sin(frame * 0.5) * 0.014;
               py = Math.cos(frame * 0.65) * 0.012;
             }
-
+    
             const eyeX = headR * 0.35;
-            const eyeY = headR * 0.12;
-            const browY = headR * 0.48;
+            const eyeY = headR * 0.11;
+            const browY = headR * 0.46;
             const mouthY = -headR * 0.32;
-
-            const leftEye = onHead(-eyeX + jx, eyeY + jy, headR, 0.008);
-            const rightEye = onHead(eyeX + jx, eyeY + jy, headR, 0.008);
-            const leftBrow = onHead(-eyeX + jx, browY + jy, headR, 0.014);
-            const rightBrow = onHead(eyeX + jx, browY + jy, headR, 0.014);
-            const mouth = onHead(jx, mouthY + jy, headR, 0.01);
-            const leftBlush = onHead(-headR * 0.52, -headR * 0.14, headR, 0.006);
-            const rightBlush = onHead(headR * 0.52, -headR * 0.14, headR, 0.006);
-
+    
+            const leftEye = onHead(-eyeX + jx, eyeY + jy, headR, 0.009);
+            const rightEye = onHead(eyeX + jx, eyeY + jy, headR, 0.009);
+            const leftBrow = onHead(-eyeX + jx, browY + jy, headR, 0.015);
+            const rightBrow = onHead(eyeX + jx, browY + jy, headR, 0.015);
+            const mouth = onHead(jx, mouthY + jy, headR, 0.011);
+            const leftBlush = onHead(-headR * 0.52, -headR * 0.14, headR, 0.007);
+            const rightBlush = onHead(headR * 0.52, -headR * 0.14, headR, 0.007);
+            const forehead = onHead(0, headR * 0.62, headR, 0.007);
+    
+            const showDreadLines = activeMood === "panic" || activeMood === "melt" || activeMood === "pinprick";
+    
             return (
               <group>
+                {/* Anime Vertical Anxiety / Dread Shadow Lines across Forehead */}
+                {showDreadLines && (
+                  <group position={forehead.pos} rotation={forehead.rot}>
+                    {[-0.085, -0.042, 0, 0.042, 0.085].map((lx, idx) => (
+                      <mesh key={idx} position={[lx, 0, 0.002]}>
+                        <planeGeometry args={[0.011, 0.095]} />
+                        <meshBasicMaterial color={PALETTE.dreadPurple} transparent opacity={0.55} />
+                      </mesh>
+                    ))}
+                  </group>
+                )}
+    
                 {/* Eyes */}
-                {mood === "blink" || mood === "laugh" ? (
+                {activeMood === "blink" || activeMood === "laugh" ? (
                   <>
                     {[leftEye, rightEye].map((t, idx) => (
                       <group key={idx} position={t.pos} rotation={t.rot}>
-                        <mesh rotation={[0, 0, mood === "laugh" ? (idx === 0 ? 0.36 : -0.36) : idx === 0 ? -0.1 : 0.1]}>
+                        <mesh rotation={[0, 0, activeMood === "laugh" ? (idx === 0 ? 0.36 : -0.36) : idx === 0 ? -0.08 : 0.08]}>
                           <planeGeometry args={[0.095, 0.02]} />
                           <meshBasicMaterial color={PALETTE.ink} />
                         </mesh>
-                        {mood === "laugh" && (
+                        {activeMood === "laugh" && (
                           <mesh position={[0, -0.022, 0]} rotation={[0, 0, idx === 0 ? -0.34 : 0.34]}>
                             <planeGeometry args={[0.09, 0.018]} />
                             <meshBasicMaterial color={PALETTE.ink} />
@@ -1116,130 +1330,152 @@ jobs:
                           <circleGeometry args={[pupilR, 14]} />
                           <meshBasicMaterial color={PALETTE.ink} />
                         </mesh>
-                        {(mood === "calm" || mood === "smile" || mood === "shy") && (
+                        {(activeMood === "calm" || activeMood === "smile" || activeMood === "shy") && (
                           <mesh position={[px + 0.009, py + 0.01, 0.011]}>
                             <circleGeometry args={[0.008, 10]} />
                             <meshBasicMaterial color="#FFFFFF" />
+                          </mesh>
+                        )}
+                        {/* Half-closed heavy judgment eyelid for smug/sideeye */}
+                        {(activeMood === "sideeye" || activeMood === "smug") && (
+                          <mesh position={[0, 0.048, 0.013]}>
+                            <planeGeometry args={[0.12, 0.022]} />
+                            <meshBasicMaterial color={PALETTE.ink} />
                           </mesh>
                         )}
                       </group>
                     ))}
                   </>
                 )}
-
-                {/* Cute Rosy Blush */}
-                {(blush || mood === "shy" || mood === "smile") && (
+    
+                {/* Rosy Blush */}
+                {(blush || activeMood === "shy" || activeMood === "smile") && (
                   <>
                     <mesh position={leftBlush.pos} rotation={leftBlush.rot}>
-                      <circleGeometry args={[0.03, 14]} />
-                      <meshBasicMaterial color={PALETTE.blush} transparent opacity={0.62} />
+                      <circleGeometry args={[0.032, 14]} />
+                      <meshBasicMaterial color={PALETTE.blush} transparent opacity={0.65} />
                     </mesh>
                     <mesh position={rightBlush.pos} rotation={rightBlush.rot}>
-                      <circleGeometry args={[0.03, 14]} />
-                      <meshBasicMaterial color={PALETTE.blush} transparent opacity={0.62} />
+                      <circleGeometry args={[0.032, 14]} />
+                      <meshBasicMaterial color={PALETTE.blush} transparent opacity={0.65} />
                     </mesh>
                   </>
                 )}
-
+    
                 {/* Eyebrows */}
-                {mood === "angry" && (
+                {activeMood === "angry" && (
                   <>
                     <group position={leftBrow.pos} rotation={leftBrow.rot}>
-                      <mesh rotation={[0, 0, -0.42]}>
-                        <planeGeometry args={[0.12, 0.022]} />
+                      <mesh rotation={[0, 0, -0.44]}>
+                        <planeGeometry args={[0.125, 0.024]} />
                         <meshBasicMaterial color={PALETTE.ink} />
                       </mesh>
                     </group>
                     <group position={rightBrow.pos} rotation={rightBrow.rot}>
-                      <mesh rotation={[0, 0, 0.42]}>
-                        <planeGeometry args={[0.12, 0.022]} />
+                      <mesh rotation={[0, 0, 0.44]}>
+                        <planeGeometry args={[0.125, 0.024]} />
                         <meshBasicMaterial color={PALETTE.ink} />
                       </mesh>
                     </group>
                   </>
                 )}
-                {(mood === "panic" || mood === "shy" || mood === "pinprick" || mood === "melt") && (
+                {(activeMood === "panic" || activeMood === "shy" || activeMood === "pinprick" || activeMood === "melt") && (
                   <>
                     <group position={leftBrow.pos} rotation={leftBrow.rot}>
-                      <mesh rotation={[0, 0, 0.34]}>
-                        <planeGeometry args={[0.09, 0.018]} />
+                      <mesh rotation={[0, 0, 0.36]}>
+                        <planeGeometry args={[0.095, 0.019]} />
                         <meshBasicMaterial color={PALETTE.ink} />
                       </mesh>
                     </group>
                     <group position={rightBrow.pos} rotation={rightBrow.rot}>
-                      <mesh rotation={[0, 0, -0.34]}>
-                        <planeGeometry args={[0.09, 0.018]} />
+                      <mesh rotation={[0, 0, -0.36]}>
+                        <planeGeometry args={[0.095, 0.019]} />
                         <meshBasicMaterial color={PALETTE.ink} />
                       </mesh>
                     </group>
                   </>
                 )}
-                {(mood === "sideeye" || mood === "smug") && (
+                {(activeMood === "sideeye" || activeMood === "smug") && (
                   <>
                     <group position={leftBrow.pos} rotation={leftBrow.rot}>
-                      <mesh rotation={[0, 0, -0.08]}>
-                        <planeGeometry args={[0.105, 0.02]} />
+                      <mesh rotation={[0, 0, -0.1]}>
+                        <planeGeometry args={[0.11, 0.022]} />
                         <meshBasicMaterial color={PALETTE.ink} />
                       </mesh>
                     </group>
                     <group position={rightBrow.pos} rotation={rightBrow.rot}>
-                      <mesh rotation={[0, 0, 0.24]}>
-                        <planeGeometry args={[0.105, 0.02]} />
+                      <mesh rotation={[0, 0, 0.26]}>
+                        <planeGeometry args={[0.11, 0.022]} />
                         <meshBasicMaterial color={PALETTE.ink} />
                       </mesh>
                     </group>
                   </>
                 )}
-
+    
                 {/* Mouths */}
                 <group position={mouth.pos} rotation={mouth.rot}>
-                  {mood === "scream" && (
+                  {activeMood === "scream" && (
                     <>
                       <mesh>
-                        <circleGeometry args={[0.068, 18]} />
+                        <circleGeometry args={[0.07, 18]} />
                         <meshBasicMaterial color={PALETTE.ink} />
                       </mesh>
                       <mesh position={[0, -0.024, 0.003]}>
-                        <circleGeometry args={[0.038, 14]} />
-                        <meshBasicMaterial color="#DC6060" />
+                        <circleGeometry args={[0.039, 14]} />
+                        <meshBasicMaterial color="#E05F5F" />
                       </mesh>
-                      <mesh position={[0, 0.036, 0.004]}>
-                        <planeGeometry args={[0.082, 0.02]} />
+                      <mesh position={[0, 0.037, 0.004]}>
+                        <planeGeometry args={[0.084, 0.02]} />
                         <meshBasicMaterial color="#FFFFFF" />
                       </mesh>
                     </>
                   )}
-                  {(mood === "laugh" || mood === "fakegrin") && (
+                  {(activeMood === "laugh" || activeMood === "fakegrin") && (
                     <>
                       <mesh position={[0, 0.012, 0]}>
-                        <circleGeometry args={[0.074, 18, Math.PI, Math.PI]} />
+                        <circleGeometry args={[0.076, 18, Math.PI, Math.PI]} />
                         <meshBasicMaterial color={PALETTE.ink} />
                       </mesh>
                       <mesh position={[0, -0.002, 0.003]}>
-                        <planeGeometry args={[0.115, 0.022]} />
+                        <planeGeometry args={[0.118, 0.023]} />
                         <meshBasicMaterial color="#FFFFFF" />
                       </mesh>
-                      <mesh position={[0, -0.036, 0.002]}>
-                        <circleGeometry args={[0.032, 12, 0, Math.PI]} />
-                        <meshBasicMaterial color="#DC6060" />
+                      <mesh position={[0, -0.037, 0.002]}>
+                        <circleGeometry args={[0.033, 12, 0, Math.PI]} />
+                        <meshBasicMaterial color="#E05F5F" />
                       </mesh>
                     </>
                   )}
-                  {mood === "smile" && (
+                  {activeMood === "smile" && (
                     <mesh position={[0, 0.015, 0]}>
                       <ringGeometry args={[0.032, 0.047, 16, 1, Math.PI * 1.15, Math.PI * 0.7]} />
                       <meshBasicMaterial color={PALETTE.ink} />
                     </mesh>
                   )}
-                  {(mood === "panic" || mood === "melt" || mood === "pinprick" || mood === "shy") && (
-                    <mesh rotation={[0, 0, Math.sin(frame * 1.8) * 0.09]}>
-                      <planeGeometry args={[0.066, 0.017]} />
+                  {/* Wavy nervous trembling mouth for panic/melt */}
+                  {(activeMood === "panic" || activeMood === "melt") && (
+                    <group position={[0, 0, 0.002]}>
+                      {[-0.032, -0.01, 0.012, 0.034].map((mx, idx) => (
+                        <mesh
+                          key={idx}
+                          position={[mx, (idx % 2 === 0 ? 1 : -1) * 0.007 * Math.sin(frame * 1.4 + idx), 0]}
+                          rotation={[0, 0, (idx % 2 === 0 ? 0.35 : -0.35)]}
+                        >
+                          <planeGeometry args={[0.028, 0.016]} />
+                          <meshBasicMaterial color={PALETTE.ink} />
+                        </mesh>
+                      ))}
+                    </group>
+                  )}
+                  {(activeMood === "pinprick" || activeMood === "shy") && (
+                    <mesh>
+                      <planeGeometry args={[0.058, 0.016]} />
                       <meshBasicMaterial color={PALETTE.ink} />
                     </mesh>
                   )}
-                  {(mood === "sideeye" || mood === "angry" || mood === "smug" || mood === "calm") && (
-                    <mesh rotation={[0, 0, mood === "smug" ? 0.14 : -0.05]}>
-                      <planeGeometry args={[0.072, 0.016]} />
+                  {(activeMood === "sideeye" || activeMood === "angry" || activeMood === "smug" || activeMood === "calm") && (
+                    <mesh rotation={[0, 0, activeMood === "smug" ? 0.16 : -0.06]}>
+                      <planeGeometry args={[0.072, 0.017]} />
                       <meshBasicMaterial color={PALETTE.ink} />
                     </mesh>
                   )}
@@ -1247,44 +1483,89 @@ jobs:
               </group>
             );
           };
-
-          // Cute Rounded Cartoon Sneaker (no sharp blocky shoes!)
+    
+          // Cute Mitten Hand with optional Pointing Finger (for 👉👈 shy pose & mocking laugh!)
+          const CartoonHand: React.FC<{
+            position: [number, number, number];
+            rotation?: [number, number, number];
+            pointing?: boolean;
+            scale?: number;
+            frame: number;
+            seed: number;
+          }> = ({ position, rotation = [0, 0, 0], pointing = false, scale = 1, frame, seed }) => (
+            <group position={position} rotation={rotation} scale={[scale, scale, scale]}>
+              <InkSphere args={[0.048, 14, 12]} scale={[1.05, 0.95, 0.9]} color={PALETTE.skin} outline={0.011} frame={frame} seed={seed} />
+              {/* Thumb */}
+              <InkSphere args={[0.024, 10, 8]} position={[0.038, 0.018, 0.01]} scale={[1.2, 0.9, 0.9]} color={PALETTE.skin} outline={0.009} frame={frame} seed={seed + 1} />
+              {/* Extended Pointing Index Finger */}
+              {pointing && (
+                <InkCylinder
+                  args={[0.017, 0.02, 0.095, 10]}
+                  position={[0, 0, 0.065]}
+                  rotation={[Math.PI / 2, 0, 0]}
+                  color={PALETTE.skin}
+                  outline={0.009}
+                  frame={frame}
+                  seed={seed + 2}
+                />
+              )}
+            </group>
+          );
+    
+          // Chunky Laced Cartoon Sneaker + White Ankle Sock (grounds characters cleanly!)
           const CartoonSneaker: React.FC<{
             position: [number, number, number];
             rotation?: [number, number, number];
             color?: string;
+            sockColor?: string;
             scale?: number;
             frame: number;
             seed: number;
-          }> = ({ position, rotation = [0, 0, 0], color = PALETTE.heroShoes, scale = 1, frame, seed }) => (
+          }> = ({ position, rotation = [0, 0, 0], color = PALETTE.heroShoes, sockColor = PALETTE.sockWhite, scale = 1, frame, seed }) => (
             <group position={position} rotation={rotation} scale={[scale, scale, scale]}>
-              <InkSphere args={[0.072, 14, 10]} position={[0, 0.045, 0.035]} scale={[0.92, 0.72, 1.55]} color={color} outline={0.011} frame={frame} seed={seed} />
-              <InkCylinder args={[0.068, 0.072, 0.026, 14]} position={[0, 0.013, 0.035]} scale={[0.92, 1, 1.5]} color={PALETTE.heroSole} outline={0.008} frame={frame} seed={seed + 1} />
+              {/* White Ankle Sock */}
+              {sockColor && (
+                <InkCylinder args={[0.047, 0.046, 0.11, 14]} position={[0, 0.11, -0.005]} color={sockColor} outline={0.011} frame={frame} seed={seed} />
+              )}
+              {/* Shoe Body */}
+              <InkSphere args={[0.082, 16, 12]} position={[0, 0.052, 0.04]} scale={[0.96, 0.74, 1.56]} color={color} outline={0.012} frame={frame} seed={seed + 1} />
+              {/* Shoelace Accent Stripes */}
+              <mesh position={[0, 0.095, 0.072]} rotation={[-0.45, 0, 0]}>
+                <planeGeometry args={[0.072, 0.014]} />
+                <meshBasicMaterial color={PALETTE.ink} />
+              </mesh>
+              <mesh position={[0, 0.082, 0.1]} rotation={[-0.55, 0, 0]}>
+                <planeGeometry args={[0.064, 0.014]} />
+                <meshBasicMaterial color={PALETTE.ink} />
+              </mesh>
+              {/* Thick Rubber Sole */}
+              <InkCylinder args={[0.078, 0.082, 0.03, 16]} position={[0, 0.015, 0.04]} scale={[0.96, 1, 1.52]} color={PALETTE.heroSole} outline={0.009} frame={frame} seed={seed + 2} />
             </group>
           );
-
+    
           // ------------------------------------------------------------------
-          // CHARACTER 1: THE OVERTHINKER (Smooth Bean Body + Rubber-Hose Limbs)
+          // CHARACTER 1: THE OVERTHINKER (Sky-Blue Tee w/ Sleeves + Noodle Limbs)
           // ------------------------------------------------------------------
           const HERO_SHIRT_PROFILE: [number, number][] = [
-            [0.185, 0.0],
-            [0.18, 0.1],
-            [0.168, 0.25],
-            [0.158, 0.42],
-            [0.145, 0.52],
-            [0.095, 0.57],
-            [0.045, 0.58],
+            [0.192, 0.0],
+            [0.186, 0.12],
+            [0.174, 0.28],
+            [0.165, 0.44],
+            [0.15, 0.53],
+            [0.098, 0.575],
+            [0.048, 0.585],
           ];
           const HERO_SHORTS_PROFILE: [number, number][] = [
-            [0.175, -0.06],
-            [0.182, 0.04],
-            [0.172, 0.13],
-            [0.14, 0.15],
+            [0.178, -0.06],
+            [0.186, 0.04],
+            [0.176, 0.14],
+            [0.145, 0.16],
           ];
-
+    
           export interface OverthinkerProps {
             position?: [number, number, number];
             rotation?: [number, number, number];
+            scale?: [number, number, number];
             frame: number;
             pose: "hunch" | "shy" | "grabbar" | "squatstrain" | "overheadpress" | "tumbled" | "realityempty";
             mood: MoodType;
@@ -1294,10 +1575,11 @@ jobs:
             tremble?: number;
             meltFactor?: number;
           }
-
+    
           export const Overthinker: React.FC<OverthinkerProps> = ({
             position = [0, 0, 0],
             rotation = [0, 0, 0],
+            scale = [1, 1, 1],
             frame,
             pose,
             mood,
@@ -1309,112 +1591,128 @@ jobs:
           }) => {
             const tx = tremble > 0 ? Math.sin(frame * 3.8) * tremble : 0;
             const tz = tremble > 0 ? Math.cos(frame * 4.2) * tremble * 0.45 : 0;
-
+            const breath = Math.sin(frame * 0.11) * 0.012;
+    
             const isSquat = pose === "squatstrain";
             const isPress = pose === "overheadpress";
             const isShy = pose === "shy";
             const isGrab = pose === "grabbar" || pose === "realityempty";
             const isTumbled = pose === "tumbled";
-
-            const hipY = isTumbled ? 0.18 : isSquat ? 0.56 : 0.78;
-            const torsoTilt = pose === "hunch" ? 0.16 : isSquat ? 0.12 : isTumbled ? -0.24 : 0;
-
-            // Smooth Continuous Leg Curves (Hip -> Knee -> Ankle, ZERO gaps!)
+    
+            const hipY = isTumbled ? 0.21 : isSquat ? 0.58 : 0.8;
+            const torsoTilt = pose === "hunch" ? 0.16 : isSquat ? 0.12 : isTumbled ? -0.22 : 0;
+    
             let leftLegPts: [number, number, number][];
             let rightLegPts: [number, number, number][];
             let leftFootPos: [number, number, number];
             let rightFootPos: [number, number, number];
             let footRotX = 0;
-
+    
             if (isTumbled) {
-              leftLegPts = [[-0.095, hipY + 0.02, 0.02], [-0.22, 0.16, 0.28], [-0.28, 0.08, 0.52]];
-              rightLegPts = [[0.095, hipY + 0.02, 0.02], [0.22, 0.16, 0.28], [0.28, 0.08, 0.52]];
-              leftFootPos = [-0.28, 0.06, 0.54];
-              rightFootPos = [0.28, 0.06, 0.54];
+              leftLegPts = [[-0.095, hipY + 0.02, 0.02], [-0.22, 0.18, 0.28], [-0.28, 0.1, 0.52]];
+              rightLegPts = [[0.095, hipY + 0.02, 0.02], [0.22, 0.18, 0.28], [0.28, 0.1, 0.52]];
+              leftFootPos = [-0.28, 0.07, 0.54];
+              rightFootPos = [0.28, 0.07, 0.54];
               footRotX = -0.75;
             } else if (isSquat) {
-              leftLegPts = [[-0.1, hipY + 0.02, 0], [-0.27, 0.36, 0.18], [-0.22, 0.06, 0.02]];
-              rightLegPts = [[0.1, hipY + 0.02, 0], [0.27, 0.36, 0.18], [0.22, 0.06, 0.02]];
-              leftFootPos = [-0.22, 0.0, 0.02];
-              rightFootPos = [0.22, 0.0, 0.02];
+              leftLegPts = [[-0.1, hipY + 0.02, 0], [-0.27, 0.37, 0.18], [-0.22, 0.09, 0.02]];
+              rightLegPts = [[0.1, hipY + 0.02, 0], [0.27, 0.37, 0.18], [0.22, 0.09, 0.02]];
+              leftFootPos = [-0.22, 0.032, 0.02];
+              rightFootPos = [0.22, 0.032, 0.02];
             } else {
-              // Natural relaxed standing stance with gentle organic knee curvature
-              leftLegPts = [[-0.095, hipY + 0.03, 0], [-0.115, hipY * 0.5, 0.03], [-0.125, 0.06, 0]];
-              rightLegPts = [[0.095, hipY + 0.03, 0], [0.115, hipY * 0.5, 0.03], [0.125, 0.06, 0]];
-              leftFootPos = [-0.125, 0.0, 0];
-              rightFootPos = [0.125, 0.0, 0];
+              leftLegPts = [[-0.095, hipY + 0.03, 0], [-0.115, hipY * 0.52, 0.03], [-0.125, 0.09, 0]];
+              rightLegPts = [[0.095, hipY + 0.03, 0], [0.115, hipY * 0.52, 0.03], [0.125, 0.09, 0]];
+              leftFootPos = [-0.125, 0.032, 0];
+              rightFootPos = [0.125, 0.032, 0];
             }
-
-            // Smooth Continuous Arm Curves (Shoulder -> Elbow -> Hand, in Upper-Body local coords)
+    
             const localBarY = Math.max(0.28, barY - (hipY + 0.08));
             let leftArmPts: [number, number, number][];
             let rightArmPts: [number, number, number][];
-
+            let leftSleeveRot: [number, number, number] = [0, 0, -0.52];
+            let rightSleeveRot: [number, number, number] = [0, 0, 0.52];
+    
             if (isShy) {
-              // Iconic 👉👈 shy finger-poking pose right in front of chest!
               const wiggle = Math.sin(frame * 0.55) * 0.015;
-              leftArmPts = [[-0.155, 0.48, 0], [-0.24, 0.32, 0.14], [-0.055 + wiggle, 0.34, 0.27]];
-              rightArmPts = [[0.155, 0.48, 0], [0.24, 0.32, 0.14], [0.055 - wiggle, 0.34, 0.27]];
+              leftArmPts = [[-0.16, 0.48, 0], [-0.26, 0.32, 0.15], [-0.075 + wiggle, 0.34, 0.29]];
+              rightArmPts = [[0.16, 0.48, 0], [0.26, 0.32, 0.15], [0.075 - wiggle, 0.34, 0.29]];
+              leftSleeveRot = [0.3, 0, -0.45];
+              rightSleeveRot = [0.3, 0, 0.45];
             } else if (isGrab || isSquat) {
-              // Smoothly reaching out & gripping the barbell shaft!
-              leftArmPts = [[-0.155, 0.48, 0], [-0.39, 0.37, 0.02], [-0.52, localBarY, -0.02]];
-              rightArmPts = [[0.155, 0.48, 0], [0.39, 0.37, 0.02], [0.52, localBarY, -0.02]];
+              leftArmPts = [[-0.16, 0.48, 0], [-0.39, 0.37, 0.02], [-0.52, localBarY, -0.02]];
+              rightArmPts = [[0.16, 0.48, 0], [0.39, 0.37, 0.02], [0.52, localBarY, -0.02]];
+              leftSleeveRot = [0, 0, -1.15];
+              rightSleeveRot = [0, 0, 1.15];
             } else if (isPress) {
-              // Pushing giant barbell straight overhead!
               const midY = (0.48 + localBarY) * 0.5;
-              leftArmPts = [[-0.155, 0.48, 0], [-0.37, midY, 0.02], [-0.5, localBarY, 0.0]];
-              rightArmPts = [[0.155, 0.48, 0], [0.37, midY, 0.02], [0.5, localBarY, 0.0]];
+              leftArmPts = [[-0.16, 0.48, 0], [-0.37, midY, 0.02], [-0.5, localBarY, 0.0]];
+              rightArmPts = [[0.16, 0.48, 0], [0.37, midY, 0.02], [0.5, localBarY, 0.0]];
+              leftSleeveRot = [0, 0, -2.2];
+              rightSleeveRot = [0, 0, 2.2];
             } else if (isTumbled) {
-              // Flailing arms in panic on floor
               const flail = Math.sin(frame * 1.2) * 0.08;
-              leftArmPts = [[-0.155, 0.48, 0], [-0.34, 0.52 + flail, 0.14], [-0.42, 0.68 + flail, 0.22]];
-              rightArmPts = [[0.155, 0.48, 0], [0.34, 0.52 - flail, 0.14], [0.42, 0.68 - flail, 0.22]];
+              leftArmPts = [[-0.16, 0.48, 0], [-0.34, 0.52 + flail, 0.14], [-0.42, 0.68 + flail, 0.22]];
+              rightArmPts = [[0.16, 0.48, 0], [0.34, 0.52 - flail, 0.14], [0.42, 0.68 - flail, 0.22]];
+              leftSleeveRot = [0, 0, -1.7];
+              rightSleeveRot = [0, 0, 1.7];
             } else {
-              // Nervous hunched panic stance (hands nervously curled near stomach)
-              leftArmPts = [[-0.155, 0.48, 0], [-0.25, 0.28, 0.08], [-0.15, 0.14, 0.17]];
-              rightArmPts = [[0.155, 0.48, 0], [0.25, 0.28, 0.08], [0.15, 0.14, 0.17]];
+              leftArmPts = [[-0.16, 0.48, 0], [-0.25, 0.28, 0.08], [-0.15, 0.14, 0.17]];
+              rightArmPts = [[0.16, 0.48, 0], [0.25, 0.28, 0.08], [0.15, 0.14, 0.17]];
             }
-
+    
+            const lHand = leftArmPts[leftArmPts.length - 1];
+            const rHand = rightArmPts[rightArmPts.length - 1];
+    
             return (
-              <group position={[position[0] + tx, position[1], position[2] + tz]} rotation={rotation}>
-                {/* Soft Ground Contact Shadow */}
-                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
-                  <circleGeometry args={[0.38, 22]} />
-                  <meshBasicMaterial color="#C8B68C" transparent opacity={0.5} />
+              <group position={[position[0] + tx, position[1], position[2] + tz]} rotation={rotation} scale={scale}>
+                {/* Soft Contact Shadow */}
+                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.036, 0]}>
+                  <circleGeometry args={[0.4, 22]} />
+                  <meshBasicMaterial color="#1F2228" transparent opacity={0.28} />
                 </mesh>
-
-                {/* Seamless Noodle Legs */}
-                <SmoothTube points={leftLegPts} radius={0.044} color={PALETTE.skin} outline={0.012} />
-                <SmoothTube points={rightLegPts} radius={0.044} color={PALETTE.skin} outline={0.012} />
-
-                {/* Cute Rounded Sneakers */}
+    
+                {/* Seamless Legs + Shorts Cuffs + Socks & Sneakers */}
+                <SmoothTube points={leftLegPts} radius={0.042} color={PALETTE.skin} outline={0.012} />
+                <SmoothTube points={rightLegPts} radius={0.042} color={PALETTE.skin} outline={0.012} />
+                {!isTumbled && (
+                  <>
+                    <InkCylinder args={[0.072, 0.076, 0.2, 14]} position={[-0.1, hipY - 0.11, 0]} rotation={[isSquat ? -0.55 : 0, 0, isSquat ? 0.24 : 0.04]} color={PALETTE.heroShorts} outline={0.012} frame={frame} seed={101} />
+                    <InkCylinder args={[0.072, 0.076, 0.2, 14]} position={[0.1, hipY - 0.11, 0]} rotation={[isSquat ? -0.55 : 0, 0, isSquat ? -0.24 : -0.04]} color={PALETTE.heroShorts} outline={0.012} frame={frame} seed={102} />
+                  </>
+                )}
                 <CartoonSneaker position={leftFootPos} rotation={[footRotX, 0.08, 0]} frame={frame} seed={105} />
                 <CartoonSneaker position={rightFootPos} rotation={[footRotX, -0.08, 0]} frame={frame} seed={108} />
-
-                {/* Sculpted Shorts Pelvis (cleanly hides leg-to-hip join!) */}
+    
+                {/* Sculpted Shorts Pelvis */}
                 <SmoothLathe profile={HERO_SHORTS_PROFILE} position={[0, hipY - 0.02, 0]} color={PALETTE.heroShorts} outline={0.013} />
-
-                {/* Upper Body */}
-                <group position={[0, hipY + 0.08, 0]} rotation={[torsoTilt, 0, 0]}>
-                  {/* Sculpted Organic T-Shirt Torso */}
+    
+                {/* Upper Body (with subtle idle breathing!) */}
+                <group position={[0, hipY + 0.08 + breath, 0]} rotation={[torsoTilt, 0, 0]}>
+                  {/* Crisp Sky-Blue T-Shirt + Collar Rim + Short Sleeves */}
                   <SmoothLathe profile={HERO_SHIRT_PROFILE} position={[0, 0, 0]} color={PALETTE.heroShirt} outline={0.014} />
-
+                  <InkTorus args={[0.076, 0.018, 10, 20]} position={[0, 0.568, 0.01]} rotation={[Math.PI / 2 + 0.1, 0, 0]} color={PALETTE.heroShirtTrim} outline={0.008} />
+                  {/* Short T-Shirt Sleeves */}
+                  <InkCylinder args={[0.056, 0.07, 0.14, 14]} position={[-0.19, 0.46, 0]} rotation={leftSleeveRot} color={PALETTE.heroShirt} outline={0.012} frame={frame} seed={112} />
+                  <InkCylinder args={[0.056, 0.07, 0.14, 14]} position={[0.19, 0.46, 0]} rotation={rightSleeveRot} color={PALETTE.heroShirt} outline={0.012} frame={frame} seed={113} />
+    
                   {/* Neck */}
                   <InkCylinder args={[0.042, 0.048, 0.12, 14]} position={[0, 0.61, 0]} color={PALETTE.skin} outline={0.011} frame={frame} seed={115} />
-
-                  {/* Seamless Rubber-Hose Noodle Arms */}
-                  <SmoothTube points={leftArmPts} radius={0.038} color={PALETTE.skin} outline={0.012} />
-                  <SmoothTube points={rightArmPts} radius={0.038} color={PALETTE.skin} outline={0.012} />
-
-                  {/* Expressive Oversized Round Doodle Head */}
+    
+                  {/* Seamless Arms + Detailed Hands */}
+                  <SmoothTube points={leftArmPts} radius={0.036} color={PALETTE.skin} outline={0.012} endCap={false} />
+                  <SmoothTube points={rightArmPts} radius={0.036} color={PALETTE.skin} outline={0.012} endCap={false} />
+                  <CartoonHand position={lHand} rotation={[0, isShy ? Math.PI / 2 : 0, 0]} pointing={isShy} frame={frame} seed={120} />
+                  <CartoonHand position={rHand} rotation={[0, isShy ? -Math.PI / 2 : 0, 0]} pointing={isShy} frame={frame} seed={124} />
+    
+                  {/* Oversized Round Doodle Head */}
                   <group position={[0, 0.86, 0.02]} scale={[1 - meltFactor * 0.16, 1 + meltFactor * 0.28, 1]}>
                     <InkSphere args={[0.25, 28, 22]} color={PALETTE.skin} outline={0.015} frame={frame} seed={130} />
-                    {/* Subtle doodle hair ahoge strands */}
+                    {/* Doodle Hair Ahoge Tuft */}
                     <SmoothTube points={[[0, 0.24, 0], [-0.03, 0.31, 0.01], [-0.07, 0.3, 0.02]]} radius={0.014} color={PALETTE.ink} outline={0} segments={8} />
                     <SmoothTube points={[[0.01, 0.24, 0], [0.05, 0.3, 0.01], [0.09, 0.28, 0.02]]} radius={0.012} color={PALETTE.ink} outline={0} segments={8} />
-
-                    <CartoonFace mood={mood} frame={frame} headR={0.25} />
-
+    
+                    <CartoonFace mood={mood} frame={frame} headR={0.25} blinkOffset={12} />
+    
                     {/* Flying Panic Sweat Drops */}
                     {sweating &&
                       [0, 1, 2, 3, 4, 5].map((i) => {
@@ -1434,8 +1732,8 @@ jobs:
                           />
                         );
                       })}
-
-                    {/* CLEAN DUAL-EYE CURVED TEAR WATERFALL ARCS (flows gracefully OUT from eyes -> DOWN to floor puddle!) */}
+    
+                    {/* Curved Dual-Eye Tear Waterfall Arcs */}
                     {waterfall && (
                       <group>
                         <SmoothTube
@@ -1443,9 +1741,9 @@ jobs:
                             [-0.09, 0.01, 0.24],
                             [-0.22, -0.05, 0.3],
                             [-0.27, -0.78, 0.26],
-                            [-0.24, -1.66, 0.18],
+                            [-0.24, -1.68, 0.18],
                           ]}
-                          radius={0.042}
+                          radius={0.044}
                           color={PALETTE.sweatBlue}
                           outline={0.01}
                           segments={20}
@@ -1455,17 +1753,16 @@ jobs:
                             [0.09, 0.01, 0.24],
                             [0.22, -0.05, 0.3],
                             [0.27, -0.78, 0.26],
-                            [0.24, -1.66, 0.18],
+                            [0.24, -1.68, 0.18],
                           ]}
-                          radius={0.042}
+                          radius={0.044}
                           color={PALETTE.sweatBlue}
                           outline={0.01}
                           segments={20}
                         />
-                        {/* Splashing Puddle */}
                         <InkCylinder
-                          args={[0.64 + Math.sin(frame * 0.85) * 0.06, 0.64, 0.025, 24]}
-                          position={[0, -1.68, 0.08]}
+                          args={[0.66 + Math.sin(frame * 0.85) * 0.06, 0.66, 0.025, 24]}
+                          position={[0, -1.7, 0.08]}
                           color={PALETTE.sweatBlue}
                           outline={0.012}
                           frame={frame}
@@ -1478,24 +1775,25 @@ jobs:
               </group>
             );
           };
-
+    
           // ------------------------------------------------------------------
-          // CHARACTER 2: LAT PULLDOWN GYM GIRL (Sculpted Hourglass + Smooth Ponytail)
+          // CHARACTER 2: LAT PULLDOWN GYM GIRL (Fixed Crop-Top Clearance + Pointing Hand)
           // ------------------------------------------------------------------
+          // Bottom radius 0.142 is cleanly +0.026 outside the 0.116 midriff cylinder -> ZERO Z-fighting!
           const GIRL_TOP_PROFILE: [number, number][] = [
-            [0.125, 0.16],
-            [0.142, 0.28],
-            [0.148, 0.42],
-            [0.132, 0.49],
-            [0.05, 0.52],
+            [0.142, 0.19],
+            [0.148, 0.29],
+            [0.154, 0.42],
+            [0.138, 0.495],
+            [0.052, 0.525],
           ];
           const GIRL_WAIST_PROFILE: [number, number][] = [
-            [0.158, -0.04],
-            [0.162, 0.05],
-            [0.132, 0.15],
-            [0.12, 0.19],
+            [0.16, -0.04],
+            [0.164, 0.05],
+            [0.136, 0.15],
+            [0.125, 0.18],
           ];
-
+    
           export const GymGirl: React.FC<{
             position?: [number, number, number];
             rotation?: [number, number, number];
@@ -1508,90 +1806,86 @@ jobs:
             const headYaw = headYawOverride !== undefined ? headYawOverride : mode === "glare" ? -1.45 : 0;
             const mood: MoodType =
               mode === "glare" ? "angry" : mode === "judge" ? "sideeye" : mode === "pointlaugh" ? "laugh" : "calm";
-
-            const hipY = isSeated ? 0.69 : 0.78;
-
-            // Smooth Leg Curves (Athletic high-waisted leggings)
+            const breath = Math.sin(frame * 0.1 + 1.1) * 0.01;
+            const hipY = isSeated ? 0.72 : 0.8;
+    
             const leftLegPts: [number, number, number][] = isSeated
-              ? [[-0.085, hipY, 0.04], [-0.095, hipY - 0.03, 0.41], [-0.095, 0.07, 0.43]]
-              : [[-0.085, hipY, 0], [-0.095, hipY * 0.5, 0.02], [-0.1, 0.06, 0]];
+              ? [[-0.085, hipY, 0.04], [-0.095, hipY - 0.03, 0.41], [-0.095, 0.1, 0.43]]
+              : [[-0.085, hipY, 0], [-0.095, hipY * 0.52, 0.02], [-0.1, 0.09, 0]];
             const rightLegPts: [number, number, number][] = isSeated
-              ? [[0.085, hipY, 0.04], [0.095, hipY - 0.03, 0.41], [0.095, 0.07, 0.43]]
-              : [[0.085, hipY, 0], [0.095, hipY * 0.5, 0.02], [0.1, 0.06, 0]];
-
-            // Smooth Arm Curves (tracks Lat Bar when seated!)
+              ? [[0.085, hipY, 0.04], [0.095, hipY - 0.03, 0.41], [0.095, 0.1, 0.43]]
+              : [[0.085, hipY, 0], [0.095, hipY * 0.52, 0.02], [0.1, 0.09, 0]];
+    
             let leftArmPts: [number, number, number][];
             let rightArmPts: [number, number, number][];
-
+    
             if (isSeated) {
               const barLocalY = 1.24 - pulldownProgress * 0.56;
               const elbowDrop = 0.76 - pulldownProgress * 0.42;
-              leftArmPts = [[-0.145, 0.44, 0], [-0.36, elbowDrop, 0.14], [-0.42, barLocalY, 0.18]];
-              rightArmPts = [[0.145, 0.44, 0], [0.36, elbowDrop, 0.14], [0.42, barLocalY, 0.18]];
+              leftArmPts = [[-0.148, 0.44, 0], [-0.36, elbowDrop, 0.14], [-0.42, barLocalY, 0.18]];
+              rightArmPts = [[0.148, 0.44, 0], [0.36, elbowDrop, 0.14], [0.42, barLocalY, 0.18]];
             } else if (mode === "judge") {
-              // Sassy hands on hips!
-              leftArmPts = [[-0.145, 0.44, 0], [-0.31, 0.25, 0.04], [-0.16, 0.07, 0.06]];
-              rightArmPts = [[0.145, 0.44, 0], [0.31, 0.25, 0.04], [0.16, 0.07, 0.06]];
+              leftArmPts = [[-0.148, 0.44, 0], [-0.31, 0.25, 0.04], [-0.16, 0.07, 0.06]];
+              rightArmPts = [[0.148, 0.44, 0], [0.31, 0.25, 0.04], [0.16, 0.07, 0.06]];
             } else {
-              // Pointing right at camera and laughing!
               const bounce = Math.sin(frame * 1.15) * 0.05;
-              leftArmPts = [[-0.145, 0.44, 0], [-0.26, 0.24, 0.1], [-0.06, 0.18, 0.22]];
-              rightArmPts = [[0.145, 0.44, 0], [0.22, 0.42 + bounce, 0.24], [0.12, 0.45 + bounce, 0.54]];
+              leftArmPts = [[-0.148, 0.44, 0], [-0.26, 0.24, 0.1], [-0.06, 0.18, 0.22]];
+              rightArmPts = [[0.148, 0.44, 0], [0.22, 0.42 + bounce, 0.24], [0.11, 0.45 + bounce, 0.56]];
             }
-
+    
+            const lHand = leftArmPts[leftArmPts.length - 1];
+            const rHand = rightArmPts[rightArmPts.length - 1];
+    
             return (
               <group position={position} rotation={rotation}>
                 {!isSeated && (
-                  <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
-                    <circleGeometry args={[0.35, 20]} />
-                    <meshBasicMaterial color="#C8B68C" transparent opacity={0.5} />
+                  <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.036, 0]}>
+                    <circleGeometry args={[0.36, 20]} />
+                    <meshBasicMaterial color="#1F2228" transparent opacity={0.25} />
                   </mesh>
                 )}
-
-                {/* Seamless Legging Legs + Sneakers */}
-                <SmoothTube points={leftLegPts} radius={0.05} color={PALETTE.girlLeggings} outline={0.012} />
-                <SmoothTube points={rightLegPts} radius={0.05} color={PALETTE.girlLeggings} outline={0.012} />
-                <CartoonSneaker position={isSeated ? [-0.095, 0.0, 0.44] : [-0.1, 0.0, 0]} scale={0.94} frame={frame} seed={205} />
-                <CartoonSneaker position={isSeated ? [0.095, 0.0, 0.44] : [0.1, 0.0, 0]} scale={0.94} frame={frame} seed={208} />
-
-                {/* High-Waisted Leggings Hips */}
+    
+                <SmoothTube points={leftLegPts} radius={0.048} color={PALETTE.girlLeggings} outline={0.012} />
+                <SmoothTube points={rightLegPts} radius={0.048} color={PALETTE.girlLeggings} outline={0.012} />
+                <CartoonSneaker position={isSeated ? [-0.095, 0.032, 0.44] : [-0.1, 0.032, 0]} scale={0.92} frame={frame} seed={205} />
+                <CartoonSneaker position={isSeated ? [0.095, 0.032, 0.44] : [0.1, 0.032, 0]} scale={0.92} frame={frame} seed={208} />
+    
                 <SmoothLathe profile={GIRL_WAIST_PROFILE} position={[0, hipY - 0.02, 0]} color={PALETTE.girlLeggings} outline={0.013} />
-
-                {/* Upper Body */}
-                <group position={[0, hipY + 0.06, 0]}>
-                  {/* Midriff + Sculpted Crop Top */}
-                  <InkCylinder args={[0.118, 0.128, 0.16, 18]} position={[0, 0.12, 0]} color={PALETTE.skin} outline={0.012} frame={frame} seed={214} />
+    
+                <group position={[0, hipY + 0.06 + breath, 0]}>
+                  {/* Cleanly recessed Midriff (radius 0.112) inside Crop Top (bottom radius 0.142) -> ZERO flicker! */}
+                  <InkCylinder args={[0.112, 0.118, 0.18, 18]} position={[0, 0.12, 0]} color={PALETTE.skin} outline={0.011} frame={frame} seed={214} />
                   <SmoothLathe profile={GIRL_TOP_PROFILE} position={[0, 0, 0]} color={PALETTE.girlTop} outline={0.013} />
+                  {/* Trim hem band */}
+                  <InkTorus args={[0.142, 0.013, 10, 22]} position={[0, 0.195, 0]} rotation={[Math.PI / 2, 0, 0]} color={PALETTE.girlTopTrim} outline={0.006} />
                   <InkCylinder args={[0.04, 0.044, 0.11, 14]} position={[0, 0.54, 0]} color={PALETTE.skin} outline={0.01} frame={frame} seed={215} />
-
-                  {/* Draped Smooth Gym Towel around neck */}
+    
+                  {/* Draped Gym Towel */}
                   <SmoothTube
                     points={[
-                      [-0.085, 0.2, 0.14],
-                      [-0.105, 0.44, 0.11],
-                      [0, 0.49, -0.09],
-                      [0.105, 0.44, 0.11],
-                      [0.085, 0.22, 0.14],
+                      [-0.088, 0.21, 0.155],
+                      [-0.108, 0.45, 0.12],
+                      [0, 0.5, -0.095],
+                      [0.108, 0.45, 0.12],
+                      [0.088, 0.23, 0.155],
                     ]}
                     radius={0.028}
                     color={PALETTE.girlTowel}
                     outline={0.01}
                     segments={20}
                   />
-
-                  {/* Seamless Arms */}
-                  <SmoothTube points={leftArmPts} radius={0.036} color={PALETTE.skin} outline={0.012} />
-                  <SmoothTube points={rightArmPts} radius={0.036} color={PALETTE.skin} outline={0.012} />
-
-                  {/* Sculpted Head + Smooth Ponytail (NO blocky boxes!) */}
+    
+                  <SmoothTube points={leftArmPts} radius={0.035} color={PALETTE.skin} outline={0.012} endCap={false} />
+                  <SmoothTube points={rightArmPts} radius={0.035} color={PALETTE.skin} outline={0.012} endCap={false} />
+                  <CartoonHand position={lHand} scale={0.92} frame={frame} seed={220} />
+                  <CartoonHand position={rHand} pointing={mode === "pointlaugh"} scale={mode === "pointlaugh" ? 1.15 : 0.92} frame={frame} seed={224} />
+    
+                  {/* Head + Smooth Flowing Ponytail */}
                   <group position={[0, 0.77, 0.01]} rotation={[0, headYaw, mode === "pointlaugh" ? Math.sin(frame * 1.1) * 0.09 : 0]}>
                     <InkSphere args={[0.22, 26, 20]} color={PALETTE.skin} outline={0.014} frame={frame} seed={230} />
-                    {/* Smooth sculpted hair cap */}
                     <InkSphere args={[0.228, 24, 18]} position={[0, 0.032, -0.038]} scale={[1.01, 1.02, 1.01]} color={PALETTE.girlHair} outline={0.014} frame={frame} seed={231} />
-                    {/* Soft swept bangs */}
                     <SmoothTube points={[[0.02, 0.21, 0.09], [-0.11, 0.16, 0.17], [-0.18, 0.04, 0.14]]} radius={0.042} color={PALETTE.girlHair} outline={0.011} segments={10} />
                     <SmoothTube points={[[-0.02, 0.21, 0.09], [0.11, 0.16, 0.17], [0.18, 0.04, 0.14]]} radius={0.042} color={PALETTE.girlHair} outline={0.011} segments={10} />
-                    {/* Flowing curved high ponytail */}
                     <InkSphere args={[0.048, 12, 10]} position={[0, 0.14, -0.23]} color={PALETTE.girlTop} outline={0.009} frame={frame} seed={234} />
                     <SmoothTube
                       points={[
@@ -1605,33 +1899,32 @@ jobs:
                       outline={0.013}
                       segments={14}
                     />
-
-                    <CartoonFace mood={mood} frame={frame} headR={0.22} eyeScale={0.94} />
+                    <CartoonFace mood={mood} frame={frame} headR={0.22} eyeScale={0.94} blinkOffset={35} />
                   </group>
                 </group>
               </group>
             );
           };
-
+    
           // ------------------------------------------------------------------
-          // CHARACTER 3: BUFF GYM BRO (Stylized V-Taper + Thick Curved Biceps)
+          // CHARACTER 3: BUFF GYM BRO (Proper Gym Shorts Legs + Headband + Integrated Traps)
           // ------------------------------------------------------------------
           const BRO_TORSO_PROFILE: [number, number][] = [
-            [0.21, 0.0],
-            [0.23, 0.14],
-            [0.28, 0.34],
-            [0.34, 0.54],
-            [0.31, 0.66],
-            [0.18, 0.72],
-            [0.09, 0.74],
+            [0.215, 0.0],
+            [0.238, 0.14],
+            [0.295, 0.34],
+            [0.355, 0.55],
+            [0.325, 0.66],
+            [0.195, 0.72],
+            [0.095, 0.75],
           ];
           const BRO_SHORTS_PROFILE: [number, number][] = [
-            [0.22, -0.08],
-            [0.235, 0.05],
-            [0.215, 0.16],
-            [0.18, 0.18],
+            [0.228, -0.06],
+            [0.242, 0.06],
+            [0.222, 0.16],
+            [0.19, 0.18],
           ];
-
+    
           export const BuffBro: React.FC<{
             position?: [number, number, number];
             rotation?: [number, number, number];
@@ -1640,152 +1933,164 @@ jobs:
             squatDepth?: number;
             headYawOverride?: number;
           }> = ({ position = [0, 0, 0], rotation = [0, 0, 0], frame, mode, squatDepth = 0, headYawOverride }) => {
-            const hipY = mode === "crushedunder" ? 0.52 : 0.82 - squatDepth * 0.3;
+            const breath = Math.sin(frame * 0.09 + 2.2) * 0.012;
+            const hipY = mode === "crushedunder" ? 0.54 : 0.84 - squatDepth * 0.3;
             const mood: MoodType =
               mode === "glare" ? "sideeye" : mode === "spot" ? "smug" : mode === "crushedunder" ? "angry" : "calm";
             const headYaw = headYawOverride !== undefined ? headYawOverride : mode === "glare" ? 0.22 : 0;
-
-            const depth = mode === "crushedunder" ? 0.9 : squatDepth;
-
-            // Thick Muscular Leg Curves
+            const depth = mode === "crushedunder" ? 0.88 : squatDepth;
+    
             const leftLegPts: [number, number, number][] = [
-              [-0.145, hipY + 0.02, 0],
-              [-0.18 - depth * 0.14, hipY * 0.52, depth * 0.24],
-              [-0.19 - depth * 0.06, 0.07, 0.02],
+              [-0.15, hipY + 0.02, 0],
+              [-0.185 - depth * 0.14, hipY * 0.54, depth * 0.24],
+              [-0.195 - depth * 0.06, 0.1, 0.02],
             ];
             const rightLegPts: [number, number, number][] = [
-              [0.145, hipY + 0.02, 0],
-              [0.18 + depth * 0.14, hipY * 0.52, depth * 0.24],
-              [0.19 + depth * 0.06, 0.07, 0.02],
+              [0.15, hipY + 0.02, 0],
+              [0.185 + depth * 0.14, hipY * 0.54, depth * 0.24],
+              [0.195 + depth * 0.06, 0.1, 0.02],
             ];
-
-            // Muscular Curved Arms
+    
+            // Proper shorts thigh tubes covering upper legs (no longer looks like briefs!)
+            const leftShortLeg: [number, number, number][] = [
+              [-0.15, hipY + 0.01, 0],
+              [-0.17 - depth * 0.09, hipY - 0.19, depth * 0.14],
+            ];
+            const rightShortLeg: [number, number, number][] = [
+              [0.15, hipY + 0.01, 0],
+              [0.17 + depth * 0.09, hipY - 0.19, depth * 0.14],
+            ];
+    
             const isHoldingBar = mode === "squat" || mode === "glare";
             let leftArmPts: [number, number, number][];
             let rightArmPts: [number, number, number][];
-
+    
             if (isHoldingBar) {
-              leftArmPts = [[-0.33, 0.58, 0], [-0.52, 0.44, -0.02], [-0.58, 0.66, -0.04]];
-              rightArmPts = [[0.33, 0.58, 0], [0.52, 0.44, -0.02], [0.58, 0.66, -0.04]];
+              leftArmPts = [[-0.31, 0.57, 0], [-0.52, 0.44, -0.02], [-0.58, 0.66, -0.04]];
+              rightArmPts = [[0.31, 0.57, 0], [0.52, 0.44, -0.02], [0.58, 0.66, -0.04]];
             } else if (mode === "crushedunder") {
-              leftArmPts = [[-0.33, 0.58, 0], [-0.48, 0.62, 0.22], [-0.46, 0.84, 0.36]];
-              rightArmPts = [[0.33, 0.58, 0], [0.48, 0.62, 0.22], [0.46, 0.84, 0.36]];
+              leftArmPts = [[-0.31, 0.57, 0], [-0.48, 0.62, 0.22], [-0.46, 0.84, 0.36]];
+              rightArmPts = [[0.31, 0.57, 0], [0.48, 0.62, 0.22], [0.46, 0.84, 0.36]];
             } else {
-              // Smug arms-crossed / relaxed power stance
-              leftArmPts = [[-0.33, 0.58, 0], [-0.46, 0.32, 0.06], [-0.26, 0.16, 0.22]];
-              rightArmPts = [[0.33, 0.58, 0], [0.46, 0.32, 0.06], [0.26, 0.16, 0.22]];
+              leftArmPts = [[-0.31, 0.57, 0], [-0.45, 0.32, 0.08], [-0.24, 0.18, 0.24]];
+              rightArmPts = [[0.31, 0.57, 0], [0.45, 0.32, 0.08], [0.24, 0.18, 0.24]];
             }
-
+    
             return (
               <group position={position} rotation={rotation}>
-                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
+                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.036, 0]}>
                   <circleGeometry args={[0.52, 24]} />
-                  <meshBasicMaterial color="#C8B68C" transparent opacity={0.5} />
+                  <meshBasicMaterial color="#1F2228" transparent opacity={0.28} />
                 </mesh>
-
-                {/* Muscular Legs + Athletic Sneakers */}
-                <SmoothTube points={leftLegPts} radius={0.074} color={PALETTE.skin} outline={0.013} />
-                <SmoothTube points={rightLegPts} radius={0.074} color={PALETTE.skin} outline={0.013} />
-                <CartoonSneaker position={[-0.19 - depth * 0.06, 0.0, 0.02]} color={PALETTE.broShoes} scale={1.18} frame={frame} seed={305} />
-                <CartoonSneaker position={[0.19 + depth * 0.06, 0.0, 0.02]} color={PALETTE.broShoes} scale={1.18} frame={frame} seed={308} />
-
-                {/* Gym Shorts */}
+    
+                {/* Muscular Legs + Proper Shorts Thigh Sleeves + Sneakers */}
+                <SmoothTube points={leftLegPts} radius={0.072} color={PALETTE.skin} outline={0.013} />
+                <SmoothTube points={rightLegPts} radius={0.072} color={PALETTE.skin} outline={0.013} />
+                <SmoothTube points={leftShortLeg} radius={0.105} color={PALETTE.broShorts} outline={0.013} segments={8} />
+                <SmoothTube points={rightShortLeg} radius={0.105} color={PALETTE.broShorts} outline={0.013} segments={8} />
+                <CartoonSneaker position={[-0.195 - depth * 0.06, 0.032, 0.02]} color={PALETTE.broShoes} scale={1.16} frame={frame} seed={305} />
+                <CartoonSneaker position={[0.195 + depth * 0.06, 0.032, 0.02]} color={PALETTE.broShoes} scale={1.16} frame={frame} seed={308} />
+    
                 <SmoothLathe profile={BRO_SHORTS_PROFILE} position={[0, hipY - 0.02, 0]} color={PALETTE.broShorts} outline={0.014} />
-
+    
                 {/* Broad Sculpted V-Taper Upper Body */}
-                <group position={[0, hipY + 0.08, 0]} rotation={[depth * 0.14, 0, 0]}>
+                <group position={[0, hipY + 0.08 + breath, 0]} rotation={[depth * 0.14, 0, 0]}>
                   <SmoothLathe profile={BRO_TORSO_PROFILE} position={[0, 0, 0]} color={PALETTE.broTank} outline={0.015} />
-                  {/* Thick muscular neck */}
-                  <InkCylinder args={[0.088, 0.115, 0.14, 16]} position={[0, 0.76, 0]} color={PALETTE.skin} outline={0.012} frame={frame} seed={316} />
-
-                  {/* Huge Deltoid Caps + Thick Curved Arms */}
-                  <InkSphere args={[0.125, 16, 12]} position={[-0.34, 0.59, 0]} color={PALETTE.skin} outline={0.013} frame={frame} seed={318} />
-                  <InkSphere args={[0.125, 16, 12]} position={[0.34, 0.59, 0]} color={PALETTE.skin} outline={0.013} frame={frame} seed={319} />
-                  <SmoothTube points={leftArmPts} radius={0.076} color={PALETTE.skin} outline={0.013} />
-                  <SmoothTube points={rightArmPts} radius={0.076} color={PALETTE.skin} outline={0.013} />
-
-                  {/* Head + Clean Buzzcut Hair */}
-                  <group position={[0, 0.99, 0.02]} rotation={[0, headYaw, 0]}>
+                  {/* Tank top neckline trim */}
+                  <InkTorus args={[0.135, 0.018, 10, 20]} position={[0, 0.695, 0.04]} rotation={[Math.PI / 2 + 0.25, 0, 0]} color={PALETTE.broTankTrim} outline={0.008} />
+                  {/* Thick muscular neck + traps */}
+                  <InkCylinder args={[0.09, 0.135, 0.15, 16]} position={[0, 0.77, 0]} color={PALETTE.skin} outline={0.012} frame={frame} seed={316} />
+    
+                  {/* Integrated Muscular Arms (smooth shoulder blend, no floating ball spheres!) */}
+                  <SmoothTube points={leftArmPts} radius={0.082} color={PALETTE.skin} outline={0.014} endCap={false} />
+                  <SmoothTube points={rightArmPts} radius={0.082} color={PALETTE.skin} outline={0.014} endCap={false} />
+                  <CartoonHand position={leftArmPts[2]} scale={1.32} frame={frame} seed={320} />
+                  <CartoonHand position={rightArmPts[2]} scale={1.32} frame={frame} seed={324} />
+    
+                  {/* Head + Buzzcut + Iconic Red Gym Headband */}
+                  <group position={[0, 1.0, 0.02]} rotation={[0, headYaw, 0]}>
                     <InkSphere args={[0.225, 26, 20]} scale={[0.96, 1.03, 0.96]} color={PALETTE.skin} outline={0.015} frame={frame} seed={330} />
-                    <InkCylinder args={[0.185, 0.205, 0.085, 18]} position={[0, 0.19, -0.02]} color={PALETTE.broHair} outline={0.012} frame={frame} seed={331} />
-                    <CartoonFace mood={mood} frame={frame} headR={0.222} />
+                    <InkCylinder args={[0.185, 0.205, 0.085, 18]} position={[0, 0.195, -0.02]} color={PALETTE.broHair} outline={0.012} frame={frame} seed={331} />
+                    <InkCylinder args={[0.208, 0.212, 0.058, 22]} position={[0, 0.132, 0]} color={PALETTE.broHeadband} outline={0.011} frame={frame} seed={332} />
+                    <CartoonFace mood={mood} frame={frame} headR={0.222} blinkOffset={55} />
                   </group>
                 </group>
               </group>
             );
           };
-
+    
           // ------------------------------------------------------------------
-          // CHARACTER 4: FRIENDLY HELPER GIRL (Cute Bob Hair + Warm Smile)
+          // CHARACTER 4: FRIENDLY HELPER GIRL (Mint Top + Cute Bob Hair + Smile)
           // ------------------------------------------------------------------
           const HELPER_TOP_PROFILE: [number, number][] = [
-            [0.148, 0.0],
-            [0.14, 0.16],
-            [0.138, 0.34],
-            [0.128, 0.44],
-            [0.048, 0.47],
+            [0.15, 0.0],
+            [0.144, 0.16],
+            [0.14, 0.34],
+            [0.13, 0.44],
+            [0.05, 0.47],
           ];
-
+    
           export const HelperGirl: React.FC<{
             position?: [number, number, number];
             rotation?: [number, number, number];
             frame: number;
             surprised?: boolean;
-          }> = ({ position = [0, 0, 0], rotation = [0, -0.22, 0], frame, surprised = false }) => {
+          }> = ({ position = [0, 0, 0], rotation = [0, -0.28, 0], frame, surprised = false }) => {
+            const breath = Math.sin(frame * 0.12) * 0.009;
             const leftArmPts: [number, number, number][] = surprised
-              ? [[-0.14, 0.4, 0], [-0.26, 0.34, 0.1], [-0.2, 0.48, 0.2]]
-              : [[-0.14, 0.4, 0], [-0.22, 0.22, 0.1], [-0.045, 0.18, 0.22]];
+              ? [[-0.142, 0.4, 0], [-0.26, 0.34, 0.1], [-0.2, 0.48, 0.2]]
+              : [[-0.142, 0.4, 0], [-0.22, 0.22, 0.1], [-0.048, 0.18, 0.23]];
             const rightArmPts: [number, number, number][] = surprised
-              ? [[0.14, 0.4, 0], [0.26, 0.34, 0.1], [0.2, 0.48, 0.2]]
-              : [[0.14, 0.4, 0], [0.22, 0.22, 0.1], [0.045, 0.18, 0.22]];
-
+              ? [[0.142, 0.4, 0], [0.26, 0.34, 0.1], [0.2, 0.48, 0.2]]
+              : [[0.142, 0.4, 0], [0.22, 0.22, 0.1], [0.048, 0.18, 0.23]];
+    
             return (
               <group position={position} rotation={rotation}>
-                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
-                  <circleGeometry args={[0.34, 20]} />
-                  <meshBasicMaterial color="#C8B68C" transparent opacity={0.5} />
+                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.036, 0]}>
+                  <circleGeometry args={[0.35, 20]} />
+                  <meshBasicMaterial color="#1F2228" transparent opacity={0.25} />
                 </mesh>
-
-                {/* Seamless Legs */}
-                <SmoothTube points={[[-0.08, 0.74, 0], [-0.09, 0.38, 0.02], [-0.095, 0.06, 0]]} radius={0.041} color={PALETTE.skin} outline={0.011} />
-                <SmoothTube points={[[0.08, 0.74, 0], [0.09, 0.38, 0.02], [0.095, 0.06, 0]]} radius={0.041} color={PALETTE.skin} outline={0.011} />
-                <CartoonSneaker position={[-0.095, 0.0, 0]} scale={0.9} frame={frame} seed={405} />
-                <CartoonSneaker position={[0.095, 0.0, 0]} scale={0.9} frame={frame} seed={408} />
-
-                {/* Shorts + Sculpted Top */}
-                <SmoothLathe profile={GIRL_WAIST_PROFILE} position={[0, 0.72, 0]} scale={[0.95, 0.9, 0.95]} color={PALETTE.helperShorts} outline={0.012} />
-
-                <group position={[0, 0.81, 0]}>
+    
+                <SmoothTube points={[[-0.08, 0.76, 0], [-0.09, 0.4, 0.02], [-0.095, 0.09, 0]]} radius={0.04} color={PALETTE.skin} outline={0.011} />
+                <SmoothTube points={[[0.08, 0.76, 0], [0.09, 0.4, 0.02], [0.095, 0.09, 0]]} radius={0.04} color={PALETTE.skin} outline={0.011} />
+                <CartoonSneaker position={[-0.095, 0.032, 0]} scale={0.88} frame={frame} seed={405} />
+                <CartoonSneaker position={[0.095, 0.032, 0]} scale={0.88} frame={frame} seed={408} />
+    
+                <SmoothLathe profile={GIRL_WAIST_PROFILE} position={[0, 0.74, 0]} scale={[0.95, 0.9, 0.95]} color={PALETTE.helperShorts} outline={0.012} />
+    
+                <group position={[0, 0.83 + breath, 0]}>
                   <SmoothLathe profile={HELPER_TOP_PROFILE} position={[0, 0, 0]} color={PALETTE.helperTop} outline={0.013} />
+                  <InkTorus args={[0.068, 0.014, 10, 18]} position={[0, 0.46, 0.01]} rotation={[Math.PI / 2 + 0.1, 0, 0]} color={PALETTE.helperTopTrim} outline={0.006} />
                   <InkCylinder args={[0.038, 0.042, 0.1, 14]} position={[0, 0.5, 0]} color={PALETTE.skin} outline={0.01} frame={frame} seed={415} />
-
-                  <SmoothTube points={leftArmPts} radius={0.034} color={PALETTE.skin} outline={0.011} />
-                  <SmoothTube points={rightArmPts} radius={0.034} color={PALETTE.skin} outline={0.011} />
-
-                  {/* Cute Rounded Bob Haircut */}
+    
+                  <SmoothTube points={leftArmPts} radius={0.033} color={PALETTE.skin} outline={0.011} endCap={false} />
+                  <SmoothTube points={rightArmPts} radius={0.033} color={PALETTE.skin} outline={0.011} endCap={false} />
+                  <CartoonHand position={leftArmPts[2]} scale={0.88} frame={frame} seed={420} />
+                  <CartoonHand position={rightArmPts[2]} scale={0.88} frame={frame} seed={424} />
+    
                   <group position={[0, 0.73, 0.01]} rotation={[0, 0, surprised ? 0.1 : 0]}>
                     <InkSphere args={[0.215, 26, 20]} color={PALETTE.skin} outline={0.014} frame={frame} seed={430} />
                     <InkSphere args={[0.228, 24, 18]} position={[0, 0.03, -0.04]} scale={[1.04, 1.0, 1.0]} color={PALETTE.helperHair} outline={0.013} frame={frame} seed={431} />
                     <SmoothTube points={[[-0.14, 0.14, 0.08], [-0.21, 0.01, 0.06], [-0.18, -0.14, 0.03]]} radius={0.046} color={PALETTE.helperHair} outline={0.011} segments={10} />
                     <SmoothTube points={[[0.14, 0.14, 0.08], [0.21, 0.01, 0.06], [0.18, -0.14, 0.03]]} radius={0.046} color={PALETTE.helperHair} outline={0.011} segments={10} />
-                    <CartoonFace mood={surprised ? "pinprick" : "smile"} frame={frame} headR={0.215} eyeScale={0.9} blush />
+                    <CartoonFace mood={surprised ? "pinprick" : "smile"} frame={frame} headR={0.215} eyeScale={0.9} blush blinkOffset={20} />
                   </group>
                 </group>
               </group>
             );
           };
-
+    
           // ------------------------------------------------------------------
-          // FEVER-DREAM FLOATING MOCKING HEADS (Wide & Well-Framed!)
+          // FEVER-DREAM FLOATING MOCKING HEADS
           // ------------------------------------------------------------------
           export const FloatingMockingFaces: React.FC<{ frame: number; intensity: number }> = ({ frame, intensity }) => {
             if (intensity <= 0.01) return null;
             const configs = [
-              { x: -1.12, y: 2.38, z: 0.65, speed: 1.3, phase: 0.0, s: 1.25, hair: PALETTE.girlHair },
-              { x: 1.12, y: 2.42, z: 0.65, speed: 1.6, phase: 1.7, s: 1.25, hair: PALETTE.broHair },
-              { x: -1.18, y: 1.25, z: 0.85, speed: 1.4, phase: 3.1, s: 1.15, hair: PALETTE.broHair },
-              { x: 1.18, y: 1.3, z: 0.85, speed: 1.8, phase: 4.5, s: 1.15, hair: PALETTE.girlHair },
-              { x: 0.0, y: 2.82, z: 0.55, speed: 1.5, phase: 2.3, s: 1.32, hair: PALETTE.girlHair },
+              { x: -1.12, y: 2.42, z: 0.65, speed: 1.3, phase: 0.0, s: 1.28, hair: PALETTE.girlHair },
+              { x: 1.12, y: 2.45, z: 0.65, speed: 1.6, phase: 1.7, s: 1.28, hair: PALETTE.broHair },
+              { x: -1.18, y: 1.25, z: 0.85, speed: 1.4, phase: 3.1, s: 1.18, hair: PALETTE.broHair },
+              { x: 1.18, y: 1.3, z: 0.85, speed: 1.8, phase: 4.5, s: 1.18, hair: PALETTE.girlHair },
+              { x: 0.0, y: 2.86, z: 0.55, speed: 1.5, phase: 2.3, s: 1.36, hair: PALETTE.girlHair },
             ];
             return (
               <group>
@@ -1810,9 +2115,11 @@ jobs:
             );
           };
           EOF
-
+    
           # --------------------------------------------------------------------
-          # 9. Master 10-Shot Wide-Framed Director (src/scene/OverthinkerScene.tsx)
+          # 9. Master 10-Shot Director (src/scene/OverthinkerScene.tsx)
+          #    Fixed: Zero character overlap at 00:20, Helper Girl clear of barbell,
+          #    Squash & Stretch rocket zip-out, Fever-Dream spiral backdrop!
           # --------------------------------------------------------------------
           cat << 'EOF' > gym-anim/src/scene/OverthinkerScene.tsx
           import React, { useLayoutEffect } from "react";
@@ -1821,12 +2128,12 @@ jobs:
           import { GymEnvironment, Barbell } from "./GymEnvironment";
           import { Overthinker, GymGirl, BuffBro, HelperGirl, FloatingMockingFaces, MoodType } from "./Characters";
           import { PALETTE, cameraShake, easeOutBack, lerp, segProgress, smoothStep } from "../utils/animation";
-
+    
           interface SceneProps {
             frame: number;
             fps: number;
           }
-
+    
           interface CameraState {
             pos: [number, number, number];
             target: [number, number, number];
@@ -1834,7 +2141,7 @@ jobs:
             roll: number;
             shake: number;
           }
-
+    
           const CameraRig: React.FC<{ state: CameraState; frame: number }> = ({ state, frame }) => {
             const { camera } = useThree();
             useLayoutEffect(() => {
@@ -1849,31 +2156,49 @@ jobs:
             }, [camera, state, frame]);
             return null;
           };
-
+    
+          // Surreal Spinning Hypnotic Spiral Backdrop during Shot 8 Fever-Dream!
+          const FeverSpiralBackdrop: React.FC<{ frame: number }> = ({ frame }) => (
+            <group position={[0, 1.6, -2.5]} rotation={[0, 0, frame * 0.08]}>
+              {Array.from({ length: 16 }).map((_, i) => {
+                const angle = (i / 16) * Math.PI * 2;
+                return (
+                  <mesh key={i} rotation={[0, 0, angle]}>
+                    <ringGeometry args={[0.1, 14, 1, 1, 0, Math.PI / 16]} />
+                    <meshBasicMaterial color={i % 2 === 0 ? PALETTE.feverSpiral : "#3D1229"} />
+                  </mesh>
+                );
+              })}
+              {[1.2, 2.5, 4.0, 5.8].map((r, i) => (
+                <mesh key={i} position={[0, 0, 0.05]}>
+                  <ringGeometry args={[r, r + 0.14, 36]} />
+                  <meshBasicMaterial color="#9E2A47" transparent opacity={0.45} />
+                </mesh>
+              ))}
+            </group>
+          );
+    
           export const OverthinkerScene: React.FC<SceneProps> = ({ frame }) => {
             const pulldownRep = 0.5 - 0.5 * Math.cos(frame * 0.14);
             const broSquatRep = 0.5 - 0.5 * Math.cos(frame * 0.11);
-
-            // Wide vertical-friendly default FOV = 54 deg
+    
             let cam: CameraState = { pos: [0, 1.45, 6.2], target: [0, 1.32, 0], fov: 54, roll: 0, shake: 0 };
-
-            // Lat Pulldown Station at x = -4.8, rotation.y = +0.16
+    
             let girlMode: "pulldown" | "glare" | "judge" | "pointlaugh" = "pulldown";
             let girlPos: [number, number, number] = [-5.18, 0, 0.06];
             let girlRot: [number, number, number] = [0, Math.PI / 2 + 0.16, 0];
             let girlHeadYaw: number | undefined = undefined;
             let pulldownVal = pulldownRep;
-
-            // Buff Bro Station at x = +4.8
+    
             let broMode: "squat" | "glare" | "spot" | "crushedunder" = "squat";
             let broPos: [number, number, number] = [4.8, 0, 0.1];
             let broRot: [number, number, number] = [0, -0.18, 0];
             let broHeadYaw: number | undefined = undefined;
             let broSquatVal = broSquatRep;
-
-            // Overthinker at Center Squat Rack (x = 0)
+    
             let heroPos: [number, number, number] = [0, 0, 0.12];
             let heroRot: [number, number, number] = [0, 0, 0];
+            let heroScale: [number, number, number] = [1, 1, 1];
             let heroPose: React.ComponentProps<typeof Overthinker>["pose"] = "hunch";
             let heroMood: MoodType = "panic";
             let heroSweat = false;
@@ -1881,35 +2206,37 @@ jobs:
             let heroTremble = 0;
             let heroMelt = 0;
             let heroVisible = true;
-
-            let heroBarPos: [number, number, number] = [0, 1.48, 0.08];
+            let showHeroBar = true;
+    
+            let heroBarPos: [number, number, number] = [0, 1.51, 0.08];
             let heroBarRot: [number, number, number] = [0, 0, 0];
             let heroPlateScale = 0;
             let heroBarBend = 0;
-
+    
             let feverIntensity = 0;
+            let isFeverBg = false;
             let showHelper = false;
-            let helperPos: [number, number, number] = [0.82, 0, 0.2];
+            let helperPos: [number, number, number] = [1.15, 0, 0.62];
             let helperSurprised = false;
-
+    
             // =================================================================
             // 10-SHOT WIDE-FRAMED TIMELINE (960 frames @ 30fps = 32.0s)
             // =================================================================
-
-            // SHOT 1 (0 - 72): Wide Lat Pulldown Girl -> Clean Front-Facing Glare Snap!
+    
+            // SHOT 1 (0 - 72): Wide Lat Pulldown Girl -> Anticipation + Glare Snap
             if (frame < 72) {
               const glareT = segProgress(frame, 58, 67);
               if (frame < 58) {
                 girlMode = "pulldown";
-                girlHeadYaw = 0;
-                cam = { pos: [-4.65, 1.5, 5.7], target: [-4.65, 1.35, 0.0], fov: 54, roll: 0, shake: 0 };
+                girlHeadYaw = frame >= 53 ? lerp(0, -0.35, segProgress(frame, 53, 58)) : 0; // anticipation turn!
+                cam = { pos: [-4.65, 1.52, 5.7], target: [-4.65, 1.38, 0.0], fov: 54, roll: 0, shake: 0 };
               } else {
                 girlMode = "glare";
-                girlHeadYaw = -1.73; // Cleanly faces straight into camera without clipping!
+                girlHeadYaw = -1.73;
                 pulldownVal = 0.06;
                 cam = {
-                  pos: [lerp(-4.65, -5.12, glareT), lerp(1.5, 1.52, glareT), lerp(5.7, 3.25, easeOutBack(glareT))],
-                  target: [-5.18, 1.48, 0.06],
+                  pos: [lerp(-4.65, -5.12, glareT), lerp(1.52, 1.54, glareT), lerp(5.7, 3.25, easeOutBack(glareT))],
+                  target: [-5.18, 1.5, 0.06],
                   fov: 48,
                   roll: 0,
                   shake: frame >= 65 ? 0.035 : 0,
@@ -1925,36 +2252,35 @@ jobs:
               if (frame < 130) {
                 const z = segProgress(frame, 72, 130);
                 cam = {
-                  pos: [0, 1.36, lerp(5.8, 4.9, z)],
-                  target: [0, 1.24, 0.12],
+                  pos: [0, 1.38, lerp(5.8, 4.9, z)],
+                  target: [0, 1.26, 0.12],
                   fov: 54,
                   roll: 0,
-                  shake: 0.028,
+                  shake: 0.025,
                 };
               } else {
                 girlMode = "glare";
                 girlHeadYaw = -1.73;
                 pulldownVal = 0.06;
-                cam = { pos: [-5.12, 1.52, 2.95], target: [-5.18, 1.5, 0.06], fov: 46, roll: -0.05, shake: 0.05 };
+                cam = { pos: [-5.12, 1.54, 2.95], target: [-5.18, 1.52, 0.06], fov: 46, roll: -0.05, shake: 0.048 };
               }
             }
             // SHOT 3 (155 - 235): Buff Bro Full Squat Rack -> Direct Camera Side-Eye Glare
             else if (frame < 235) {
               if (frame < 204) {
                 broMode = "squat";
-                // Wide enough to show ENTIRE barbell + plates + squat rack!
-                cam = { pos: [4.75, 1.42, 6.2], target: [4.8, 1.28, 0.1], fov: 54, roll: 0, shake: 0 };
+                cam = { pos: [4.75, 1.44, 6.2], target: [4.8, 1.3, 0.1], fov: 54, roll: 0, shake: 0 };
               } else {
                 broMode = "glare";
                 broSquatVal = 0.72;
                 broHeadYaw = 0.18;
                 const snap = segProgress(frame, 204, 214);
                 cam = {
-                  pos: [4.78, 1.44, lerp(5.8, 3.4, easeOutBack(snap))],
-                  target: [4.8, 1.5, 0.1],
+                  pos: [4.78, 1.46, lerp(5.8, 3.45, easeOutBack(snap))],
+                  target: [4.8, 1.52, 0.1],
                   fov: 48,
                   roll: 0.04,
-                  shake: 0.04,
+                  shake: 0.038,
                 };
               }
             }
@@ -1966,32 +2292,32 @@ jobs:
                 heroMood = "melt";
                 heroMelt = smoothStep(segProgress(frame, 238, 266));
                 heroTremble = 0.015;
-                cam = { pos: [0, 1.5, 4.2], target: [0, 1.42, 0.12], fov: 50, roll: 0, shake: 0.018 };
+                cam = { pos: [0, 1.52, 4.2], target: [0, 1.44, 0.12], fov: 50, roll: 0, shake: 0.016 };
               } else {
                 heroPose = "shy";
                 heroMood = "shy";
-                heroTremble = 0.022;
-                cam = { pos: [0, 1.32, 5.1], target: [0, 1.22, 0.12], fov: 54, roll: 0, shake: 0.024 };
+                heroTremble = 0.02;
+                cam = { pos: [0, 1.34, 5.1], target: [0, 1.24, 0.12], fov: 54, roll: 0, shake: 0.022 };
               }
             }
-            // SHOT 5 (320 - 430): Imagined Peer Pressure + Giant Barbell (All Fully Visible!)
+            // SHOT 5 (320 - 430): Imagined Peer Pressure + Giant Barbell
             else if (frame < 430) {
               heroSweat = true;
               if (frame < 375) {
                 girlMode = "judge";
-                girlPos = [-0.95, 0, 1.38];
+                girlPos = [-0.98, 0, 1.38];
                 girlRot = [0, 0.42, 0];
                 girlHeadYaw = -0.3;
-
+    
                 broMode = "glare";
-                broPos = [1.02, 0, 1.42];
+                broPos = [1.04, 0, 1.42];
                 broRot = [0, -0.45, 0];
                 broHeadYaw = 0.3;
                 broSquatVal = 0;
-
+    
                 heroPose = "grabbar";
                 heroMood = frame < 350 ? "fakegrin" : "angry";
-                heroBarPos = [0, 1.48, 0.08];
+                heroBarPos = [0, 1.51, 0.08];
                 heroPlateScale = 0;
                 cam = { pos: [0, 1.44, 6.8], target: [0, 1.3, 0.3], fov: 55, roll: 0, shake: 0.014 };
               } else {
@@ -2000,34 +2326,33 @@ jobs:
                 heroMood = "panic";
                 heroTremble = 0.038;
                 heroPlateScale = 1.65 * drop;
-                heroBarPos = [0, 1.22, 0.08];
+                heroBarPos = [0, 1.24, 0.08];
                 heroBarBend = 0.12;
-                // Wide shot (z = 7.4) so giant plates fit inside frame with generous margins!
-                cam = { pos: [0, 1.35, 7.4], target: [0, 1.2, 0.08], fov: 56, roll: 0, shake: 0.044 };
+                cam = { pos: [0, 1.36, 7.4], target: [0, 1.22, 0.08], fov: 56, roll: 0, shake: 0.044 };
               }
             }
             // SHOT 6 (430 - 540): Buff Bro Smug Spotter -> Tear Waterfall Overhead Press!
             else if (frame < 540) {
               heroSweat = true;
               broMode = "spot";
-              broPos = [0.24, 0, -0.62];
+              broPos = [0.24, 0, -0.64];
               broRot = [0, -0.1, 0];
               broHeadYaw = 0.08;
               broSquatVal = 0;
               heroPlateScale = 1.65;
-
+    
               if (frame < 475) {
                 heroPose = "squatstrain";
                 heroMood = "panic";
                 heroTremble = 0.042;
-                heroBarPos = [0, 1.22, 0.12];
+                heroBarPos = [0, 1.24, 0.12];
                 heroBarBend = 0.14;
                 cam = {
                   pos: [0.1, 1.42, lerp(7.4, 6.3, segProgress(frame, 430, 470))],
-                  target: [0.05, 1.28, 0],
+                  target: [0.05, 1.3, 0],
                   fov: 55,
                   roll: 0,
-                  shake: 0.034,
+                  shake: 0.032,
                 };
               } else {
                 const liftT = easeOutBack(segProgress(frame, 475, 495));
@@ -2035,150 +2360,161 @@ jobs:
                 heroMood = "scream";
                 heroWaterfall = true;
                 heroTremble = 0.048;
-                heroBarPos = [0, lerp(1.22, 2.24, liftT), 0.12];
+                heroBarPos = [0, lerp(1.24, 2.26, liftT), 0.12];
                 heroBarBend = 0.15;
-                cam = { pos: [0, 1.48, 7.5], target: [0, 1.38, 0.05], fov: 56, roll: 0, shake: 0.055 };
+                cam = { pos: [0, 1.48, 7.5], target: [0, 1.4, 0.05], fov: 56, roll: 0, shake: 0.054 };
               }
             }
-            // SHOT 7 (540 - 615): Cleanly Separated Barbell Crash + Gym Girl Laughs & Points
+            // SHOT 7 (540 - 615): Barbell Crash & Tumble -> Clean Solo Cut to Gym Girl Laughing!
             else if (frame < 615) {
               if (frame < 588) {
-                // Buff Bro crouched left-rear catching giant bar; Overthinker tumbled right-front (ZERO clipping!)
                 broMode = "crushedunder";
                 broPos = [-0.52, 0, -0.25];
                 broRot = [0, 0.22, 0];
-
+    
                 heroPose = "tumbled";
                 heroPos = [0.56, 0, 0.55];
                 heroRot = [0, -0.28, 0];
                 heroMood = "scream";
                 heroTremble = 0.032;
-
+    
                 heroPlateScale = 1.6;
                 heroBarPos = [-0.46, 1.44 + Math.sin(frame * 0.9) * 0.03, 0.12];
                 heroBarRot = [0, 0, -0.15];
-                cam = { pos: [0.05, 1.46, 6.9], target: [0.02, 1.18, 0.15], fov: 55, roll: -0.07, shake: 0.05 };
+                cam = { pos: [0.05, 1.46, 6.9], target: [0.02, 1.2, 0.15], fov: 55, roll: -0.07, shake: 0.048 };
               } else {
+                // FIXED BUG: Hide Overthinker & Barbell cleanly so ZERO body overlap occurs!
+                heroVisible = false;
+                showHeroBar = false;
                 girlMode = "pointlaugh";
-                girlPos = [0, 0, 0.2];
+                girlPos = [0, 0, 0.35];
                 girlRot = [0, 0, 0];
                 girlHeadYaw = 0;
-                cam = { pos: [0, 1.35, 4.3], target: [0, 1.28, 0.2], fov: 52, roll: 0.05, shake: 0.042 };
+                cam = { pos: [0, 1.38, 4.25], target: [0, 1.32, 0.35], fov: 52, roll: 0.05, shake: 0.04 };
               }
             }
-            // SHOT 8 (615 - 720): Trippy Fever-Dream Meltdown (All 5 Laughing Heads Visible!)
+            // SHOT 8 (615 - 720): Trippy Spiral Fever-Dream Meltdown!
             else if (frame < 720) {
               const t = segProgress(frame, 615, 720);
               feverIntensity = Math.min(1, t * 2.5);
-
+              isFeverBg = true;
+    
               heroPose = "tumbled";
               heroPos = [0, 0, 0.22];
               heroMood = "panic";
               heroSweat = true;
               heroMelt = 0.24 * Math.sin(frame * 0.45);
-              heroTremble = 0.055;
-
+              heroTremble = 0.052;
+    
               heroPlateScale = 1.55;
-              heroBarPos = [0, 1.5, -0.35];
-              heroBarRot = [0, 0, Math.sin(frame * 0.35) * 0.2];
-
+              heroBarPos = [0, 1.54, -0.35];
+              heroBarRot = [0, 0, Math.sin(frame * 0.35) * 0.22];
+    
               cam = {
-                pos: [Math.sin(frame * 0.22) * 0.38, 1.45 + Math.cos(frame * 0.28) * 0.16, 6.9 - t * 0.4],
-                target: [0, 1.42, 0.2],
+                pos: [Math.sin(frame * 0.22) * 0.38, 1.46 + Math.cos(frame * 0.28) * 0.16, 6.9 - t * 0.4],
+                target: [0, 1.44, 0.2],
                 fov: 56 + Math.sin(frame * 0.45) * 3.5,
                 roll: Math.sin(frame * 0.24) * 0.18,
-                shake: 0.062,
+                shake: 0.058,
               };
             }
-            // SHOT 9 (720 - 850): Reality Snap! Everyone Peaceful -> Wide EMPTY BARBELL Reveal
+            // SHOT 9 (720 - 850): Reality Snap! Bright Peaceful Gym -> Wide EMPTY BARBELL Reveal
             else if (frame < 850) {
               heroPose = "realityempty";
-              heroBarPos = [0, 1.48, 0.08];
+              heroBarPos = [0, 1.51, 0.08];
               heroPlateScale = 0;
               if (frame < 746) {
                 heroMood = frame < 735 ? "blink" : "pinprick";
-                cam = { pos: [0, 1.68, 3.2], target: [0, 1.66, 0.12], fov: 48, roll: 0, shake: 0 };
+                cam = { pos: [0, 1.7, 3.25], target: [0, 1.68, 0.12], fov: 48, roll: 0, shake: 0 };
               } else if (frame < 778) {
                 broMode = "squat";
-                cam = { pos: [4.75, 1.42, 6.2], target: [4.8, 1.28, 0.1], fov: 54, roll: 0, shake: 0 };
+                cam = { pos: [4.75, 1.44, 6.2], target: [4.8, 1.3, 0.1], fov: 54, roll: 0, shake: 0 };
               } else if (frame < 808) {
                 girlMode = "pulldown";
                 girlHeadYaw = 0;
-                cam = { pos: [-4.65, 1.5, 5.7], target: [-4.65, 1.35, 0.0], fov: 54, roll: 0, shake: 0 };
+                cam = { pos: [-4.65, 1.52, 5.7], target: [-4.65, 1.38, 0.0], fov: 54, roll: 0, shake: 0 };
               } else {
                 const zoomOut = smoothStep(segProgress(frame, 808, 846));
                 heroMood = "pinprick";
                 cam = {
-                  pos: [0, lerp(1.64, 1.4, zoomOut), lerp(3.3, 6.6, zoomOut)],
-                  target: [0, lerp(1.64, 1.3, zoomOut), 0.1],
+                  pos: [0, lerp(1.66, 1.42, zoomOut), lerp(3.3, 6.6, zoomOut)],
+                  target: [0, lerp(1.66, 1.32, zoomOut), 0.1],
                   fov: lerp(48, 55, zoomOut),
                   roll: 0,
-                  shake: frame >= 810 && frame <= 822 ? 0.032 : 0,
+                  shake: frame >= 810 && frame <= 822 ? 0.03 : 0,
                 };
               }
             }
-            // SHOT 10 (850 - 960): Friendly Helper Girl "NEED HELP?" -> Rocket Zip Exit!
+            // SHOT 10 (850 - 960): Friendly Helper Girl "NEED HELP?" (Clear of Barbell!) -> Squash & Stretch Rocket Zip!
             else {
               showHelper = true;
               const walkIn = smoothStep(segProgress(frame, 850, 878));
-              // Both Overthinker (x = -0.42) and Helper Girl (x = +0.82) fit 100% cleanly inside 9:16 frame!
-              heroPos = [-0.42, 0, 0.12];
-              heroBarPos = [-0.12, 1.48, 0.08];
+              heroPos = [-0.45, 0, 0.1];
+              heroBarPos = [-0.35, 1.51, 0.06];
               heroPose = "realityempty";
               heroPlateScale = 0;
               heroMood = "pinprick";
-
-              helperPos = [lerp(2.05, 0.82, walkIn), 0, 0.24];
-
-              if (frame >= 900) {
+    
+              // FIXED BUG: Helper Girl stands at z = 0.65, x = +1.12 -> completely in FRONT of and CLEAR of barbell!
+              helperPos = [lerp(2.25, 1.12, walkIn), 0, 0.65];
+    
+              // Anticipation squash (frames 896-899) -> extreme vertical cartoon stretch rocket drop (frames 900-907)!
+              if (frame >= 896 && frame < 900) {
+                const sq = segProgress(frame, 896, 900);
+                heroScale = [1 + sq * 0.28, 1 - sq * 0.26, 1 + sq * 0.2];
+              } else if (frame >= 900) {
                 const zipT = segProgress(frame, 900, 907);
-                heroPos = [-0.42, lerp(0, -5.8, zipT), 0.12];
+                heroPos = [-0.45, lerp(0, -6.2, zipT), 0.1];
+                heroScale = [0.55, 2.35, 0.55];
                 if (frame > 907) heroVisible = false;
                 helperSurprised = true;
               }
               cam = {
-                pos: [0.18, 1.4, 6.65],
-                target: [0.18, 1.3, 0.12],
+                pos: [0.3, 1.42, 6.85],
+                target: [0.3, 1.32, 0.18],
                 fov: 55,
                 roll: 0,
                 shake: frame >= 900 && frame <= 914 ? 0.055 : 0,
               };
             }
-
+    
             return (
               <>
-                <color attach="background" args={[PALETTE.bgPaper]} />
-                <ambientLight intensity={1.1} />
-                <directionalLight position={[4, 9, 7]} intensity={0.45} />
-
+                <color attach="background" args={[isFeverBg ? PALETTE.feverBg : PALETTE.bgPaper]} />
+    
                 <CameraRig state={cam} frame={frame} />
-
-                <GymEnvironment frame={frame} pulldownProgress={pulldownVal} />
-
+    
+                {/* Normal Gym Environment OR Surreal Fever-Dream Spiral */}
+                <GymEnvironment frame={frame} pulldownProgress={pulldownVal} visible={!isFeverBg} />
+                {isFeverBg && <FeverSpiralBackdrop frame={frame} />}
+    
                 {/* Buff Bro's Barbell at his own squat rack */}
-                {(broMode === "squat" || broMode === "glare") && broPos[0] > 2.5 && (
+                {!isFeverBg && (broMode === "squat" || broMode === "glare") && broPos[0] > 2.5 && (
                   <Barbell
-                    position={[broPos[0], 1.54 - broSquatVal * 0.3, broPos[2] - 0.05]}
+                    position={[broPos[0], 1.56 - broSquatVal * 0.3, broPos[2] - 0.05]}
                     rotation={[0, broRot[1], 0]}
                     plateScale={1.04}
                     frame={frame}
                   />
                 )}
-
+    
                 {/* Overthinker's Barbell */}
-                <Barbell
-                  position={heroBarPos}
-                  rotation={heroBarRot}
-                  plateScale={heroPlateScale}
-                  bend={heroBarBend}
-                  frame={frame}
-                />
-
+                {showHeroBar && (
+                  <Barbell
+                    position={heroBarPos}
+                    rotation={heroBarRot}
+                    plateScale={heroPlateScale}
+                    bend={heroBarBend}
+                    frame={frame}
+                  />
+                )}
+    
                 {/* Characters */}
                 {heroVisible && (
                   <Overthinker
                     position={heroPos}
                     rotation={heroRot}
+                    scale={heroScale}
                     frame={frame}
                     pose={heroPose}
                     mood={heroMood}
@@ -2189,75 +2525,95 @@ jobs:
                     meltFactor={heroMelt}
                   />
                 )}
-
-                <GymGirl
-                  position={girlPos}
-                  rotation={girlRot}
-                  frame={frame}
-                  mode={girlMode}
-                  pulldownProgress={pulldownVal}
-                  headYawOverride={girlHeadYaw}
-                />
-
-                <BuffBro
-                  position={broPos}
-                  rotation={broRot}
-                  frame={frame}
-                  mode={broMode}
-                  squatDepth={broSquatVal}
-                  headYawOverride={broHeadYaw}
-                />
-
+    
+                {!isFeverBg && (
+                  <GymGirl
+                    position={girlPos}
+                    rotation={girlRot}
+                    frame={frame}
+                    mode={girlMode}
+                    pulldownProgress={pulldownVal}
+                    headYawOverride={girlHeadYaw}
+                  />
+                )}
+    
+                {!isFeverBg && (
+                  <BuffBro
+                    position={broPos}
+                    rotation={broRot}
+                    frame={frame}
+                    mode={broMode}
+                    squatDepth={broSquatVal}
+                    headYawOverride={broHeadYaw}
+                  />
+                )}
+    
                 {showHelper && <HelperGirl position={helperPos} frame={frame} surprised={helperSurprised} />}
-
+    
                 <FloatingMockingFaces frame={frame} intensity={feverIntensity} />
               </>
             );
           };
           EOF
-
+    
           # --------------------------------------------------------------------
-          # 10. Clean 2D Comic Overlay & Speech Bubble (src/components/ComicOverlay.tsx)
+          # 10. Rich 2D Comic Overlay: Thought Bubbles, Fever Text, Dust Cloud (src/components/ComicOverlay.tsx)
           # --------------------------------------------------------------------
           cat << 'EOF' > gym-anim/src/components/ComicOverlay.tsx
           import React from "react";
           import { AbsoluteFill } from "remotion";
           import { PALETTE, boilJitter, easeOutBack, segProgress } from "../utils/animation";
-
+    
           export const ComicOverlay: React.FC<{ frame: number }> = ({ frame }) => {
-            const boomFrames = [66, 135, 206, 376, 541, 590, 810, 901];
+            const boomFrames = [65, 134, 206, 376, 541, 590, 810, 901];
             const isImpactFlash = boomFrames.some((bf) => frame === bf || frame === bf + 1);
-
+    
             const isFever = frame >= 615 && frame < 720;
-            const feverHue = isFever ? Math.sin(frame * 0.45) * 18 : 0;
-
+            const showActionLines =
+              (frame >= 72 && frame <= 155) ||
+              (frame >= 475 && frame <= 540) ||
+              isFever;
+    
+            const showAngerMark = (frame >= 64 && frame < 72) || (frame >= 130 && frame < 155);
+    
+            // Inner Overthinking Thought Captions (adds hilarious relatable context!)
+            let thoughtText = "";
+            let thoughtPop = 1;
+            if (frame >= 80 && frame <= 126) {
+              thoughtText = "Don't look... act normal...";
+              thoughtPop = easeOutBack(segProgress(frame, 80, 89));
+            } else if (frame >= 274 && frame <= 318) {
+              thoughtText = "Are they judging my form?!";
+              thoughtPop = easeOutBack(segProgress(frame, 274, 283));
+            } else if (frame >= 326 && frame <= 372) {
+              thoughtText = "ACT COOL!! LIFT HEAVY!!";
+              thoughtPop = easeOutBack(segProgress(frame, 326, 334));
+            } else if (frame >= 816 && frame <= 848) {
+              thoughtText = "...it's literally empty.";
+              thoughtPop = easeOutBack(segProgress(frame, 816, 825));
+            }
+    
             const showNeedHelp = frame >= 865;
             const needHelpPop = easeOutBack(segProgress(frame, 865, 876));
             const jx = boilJitter(frame, 99, 2.2);
             const jy = boilJitter(frame, 107, 2.2);
-
-            // Rocket zip-out speed lines aligned cleanly over Overthinker (x = -0.42 in Shot 10)
-            const showSpeedLines = frame >= 900 && frame <= 936;
-            const speedFade = showSpeedLines ? Math.max(0, 1 - segProgress(frame, 912, 936)) : 0;
-
-            const showActionLines =
-              (frame >= 72 && frame <= 155) ||
-              (frame >= 475 && frame <= 540) ||
-              (frame >= 615 && frame <= 720);
-
-            const showAngerMark = (frame >= 64 && frame < 72) || (frame >= 130 && frame < 155);
-
+    
+            // Rocket zip-out multi-line speed streaks + thick comic cloud poof!
+            const showSpeedLines = frame >= 900 && frame <= 938;
+            const speedFade = showSpeedLines ? Math.max(0, 1 - segProgress(frame, 914, 938)) : 0;
+            const puffGrow = showSpeedLines ? Math.min(1.5, (frame - 900) / 10) : 0;
+    
             return (
               <AbsoluteFill style={{ pointerEvents: "none" }}>
                 {/* Manga Radial Action Lines */}
                 {showActionLines && (
-                  <svg viewBox="0 0 1080 1920" style={{ width: "100%", height: "100%", opacity: isFever ? 0.28 : 0.18 }}>
-                    {Array.from({ length: 30 }).map((_, i) => {
-                      const angle = (i / 30) * Math.PI * 2 + (frame % 3) * 0.05;
-                      const x1 = 540 + Math.cos(angle) * 440;
-                      const y1 = 960 + Math.sin(angle) * 620;
-                      const x2 = 540 + Math.cos(angle) * 1180;
-                      const y2 = 960 + Math.sin(angle) * 1460;
+                  <svg viewBox="0 0 1080 1920" style={{ width: "100%", height: "100%", opacity: isFever ? 0.32 : 0.16 }}>
+                    {Array.from({ length: 32 }).map((_, i) => {
+                      const angle = (i / 32) * Math.PI * 2 + (frame % 3) * 0.05;
+                      const x1 = 540 + Math.cos(angle) * 430;
+                      const y1 = 960 + Math.sin(angle) * 610;
+                      const x2 = 540 + Math.cos(angle) * 1200;
+                      const y2 = 960 + Math.sin(angle) * 1480;
                       return (
                         <line
                           key={i}
@@ -2265,53 +2621,116 @@ jobs:
                           y1={y1}
                           x2={x2}
                           y2={y2}
-                          stroke={PALETTE.ink}
+                          stroke={isFever ? "#FF5C77" : PALETTE.ink}
                           strokeWidth={i % 3 === 0 ? 6 : 3}
                         />
                       );
                     })}
                   </svg>
                 )}
-
+    
+                {/* Fever-Dream Shaking Comic "HAHAHA!" / "LOL!" Text */}
+                {isFever && (
+                  <>
+                    {[
+                      { text: "HAHAHA!!", left: 75, top: 340, rot: -12, size: 74, col: "#FFE66D" },
+                      { text: "LOL!!", right: 85, top: 410, rot: 14, size: 84, col: "#FF6B6B" },
+                      { text: "NOOB!!", left: 95, bottom: 420, rot: 9, size: 68, col: "#FFFFFF" },
+                      { text: "LMAO!!", right: 75, bottom: 380, rot: -11, size: 78, col: "#FFE66D" },
+                    ].map((item, idx) => {
+                      const sx = Math.sin(frame * 1.9 + idx * 2) * 12;
+                      const sy = Math.cos(frame * 2.2 + idx * 3) * 12;
+                      return (
+                        <div
+                          key={idx}
+                          style={{
+                            position: "absolute",
+                            left: item.left,
+                            right: item.right,
+                            top: item.top,
+                            bottom: item.bottom,
+                            transform: `translate(${sx}px, ${sy}px) rotate(${item.rot}deg)`,
+                            fontFamily: "'DejaVu Sans', sans-serif",
+                            fontWeight: 900,
+                            fontSize: item.size,
+                            color: item.col,
+                            WebkitTextStroke: `4px ${PALETTE.ink}`,
+                            textShadow: `6px 6px 0px ${PALETTE.ink}`,
+                            letterSpacing: "2px",
+                          }}
+                        >
+                          {item.text}
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+    
                 {/* Comic Anger Vein Mark during glare close-ups */}
                 {showAngerMark && (
                   <svg
                     viewBox="0 0 120 120"
-                    style={{ position: "absolute", top: 660, right: 240, width: 88, height: 88 }}
+                    style={{ position: "absolute", top: 650, right: 235, width: 92, height: 92 }}
                   >
-                    <path d="M25,45 Q45,45 45,25 M75,25 Q75,45 95,45 M95,75 Q75,75 75,95 M45,95 Q45,75 25,75" fill="none" stroke="#D83C30" strokeWidth="11" strokeLinecap="round" />
+                    <path d="M25,45 Q45,45 45,25 M75,25 Q75,45 95,45 M95,75 Q75,75 75,95 M45,95 Q45,75 25,75" fill="none" stroke="#DC3B2F" strokeWidth="11" strokeLinecap="round" />
                   </svg>
                 )}
-
-                {/* Vertical Rocket-Drop Speed Lines + Dust Puff */}
+    
+                {/* Hand-Drawn Overthinking Thought Bubble */}
+                {thoughtText && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 290,
+                      left: "50%",
+                      transform: `translate(-50%, 0) translate(${jx}px, ${jy}px) scale(${thoughtPop})`,
+                      backgroundColor: "#FFFFFF",
+                      border: `6px solid ${PALETTE.ink}`,
+                      borderRadius: "36px",
+                      padding: "18px 36px",
+                      fontFamily: "'DejaVu Sans', 'Comic Sans MS', sans-serif",
+                      fontWeight: 900,
+                      fontSize: 42,
+                      color: PALETTE.ink,
+                      whiteSpace: "nowrap",
+                      boxShadow: `7px 7px 0px ${PALETTE.ink}`,
+                    }}
+                  >
+                    {thoughtText}
+                  </div>
+                )}
+    
+                {/* Dynamic Multi-Width Rocket Speed Lines + Cartoon Cloud Dust Puff */}
                 {showSpeedLines && (
                   <svg
                     viewBox="0 0 1080 1920"
                     style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: speedFade }}
                   >
-                    <line x1="335" y1="700" x2="335" y2="1410" stroke={PALETTE.speedRed} strokeWidth="9" strokeLinecap="round" />
-                    <line x1="374" y1="770" x2="374" y2="1450" stroke={PALETTE.ink} strokeWidth="6" strokeLinecap="round" />
-                    <line x1="414" y1="720" x2="414" y2="1420" stroke={PALETTE.speedRed} strokeWidth="7" strokeLinecap="round" />
-                    <ellipse
-                      cx="374"
-                      cy="1410"
-                      rx={70 + (frame - 900) * 5.2}
-                      ry={22 + (frame - 900) * 1.7}
-                      fill="#FFFFFF"
-                      stroke={PALETTE.ink}
-                      strokeWidth="5"
-                      opacity={Math.max(0, 1 - (frame - 900) / 18)}
-                    />
+                    <line x1="278" y1="680" x2="278" y2="1390" stroke={PALETTE.speedRed} strokeWidth="12" strokeLinecap="round" />
+                    <line x1="312" y1="760" x2="312" y2="1445" stroke={PALETTE.ink} strokeWidth="6" strokeLinecap="round" />
+                    <line x1="346" y1="630" x2="346" y2="1430" stroke="#FFFFFF" strokeWidth="10" strokeLinecap="round" />
+                    <line x1="378" y1="730" x2="378" y2="1440" stroke={PALETTE.ink} strokeWidth="8" strokeLinecap="round" />
+                    <line x1="412" y1="690" x2="412" y2="1405" stroke={PALETTE.speedRed} strokeWidth="9" strokeLinecap="round" />
+                    {/* Multi-lobe Cartoon Smoke Cloud Poof */}
+                    <g
+                      transform={`translate(345, 1395) scale(${0.6 + puffGrow * 0.7})`}
+                      opacity={Math.max(0, 1 - (frame - 900) / 22)}
+                    >
+                      <circle cx="-55" cy="8" r="42" fill="#FFFFFF" stroke={PALETTE.ink} strokeWidth="6" />
+                      <circle cx="55" cy="10" r="38" fill="#FFFFFF" stroke={PALETTE.ink} strokeWidth="6" />
+                      <circle cx="0" cy="-16" r="52" fill="#FFFFFF" stroke={PALETTE.ink} strokeWidth="6" />
+                      <ellipse cx="0" cy="12" rx="76" ry="34" fill="#FFFFFF" />
+                    </g>
                   </svg>
                 )}
-
+    
                 {/* Crisp Comic Speech Bubble "NEED HELP?" cleanly above Helper Girl */}
                 {showNeedHelp && (
                   <div
                     style={{
                       position: "absolute",
-                      right: 78,
-                      top: 525,
+                      right: 68,
+                      top: 505,
                       transform: `translate(${jx}px, ${jy}px) scale(${needHelpPop}) rotate(-3deg)`,
                       transformOrigin: "bottom center",
                     }}
@@ -2321,7 +2740,7 @@ jobs:
                         backgroundColor: "#FFFFFF",
                         border: `7px solid ${PALETTE.ink}`,
                         borderRadius: "40px",
-                        padding: "20px 32px",
+                        padding: "20px 34px",
                         fontFamily: "'DejaVu Sans', 'Comic Sans MS', sans-serif",
                         fontWeight: 900,
                         fontSize: 50,
@@ -2336,23 +2755,24 @@ jobs:
                       <br />
                       HELP?
                     </div>
-                    <svg viewBox="0 0 60 50" style={{ width: 54, height: 44, marginLeft: 118, marginTop: -7 }}>
+                    <svg viewBox="0 0 60 50" style={{ width: 54, height: 44, marginLeft: 132, marginTop: -7 }}>
                       <polygon points="8,0 44,0 24,44" fill="#FFFFFF" stroke={PALETTE.ink} strokeWidth="7" strokeLinejoin="round" />
                       <line x1="12" y1="0" x2="40" y2="0" stroke="#FFFFFF" strokeWidth="9" />
                     </svg>
                   </div>
                 )}
-
-                {/* Soft Warm Vignette */}
+    
+                {/* Soft Paper Vignette */}
                 <div
                   style={{
                     position: "absolute",
                     inset: 0,
-                    background: "radial-gradient(circle at 50% 48%, rgba(0,0,0,0) 66%, rgba(72,56,28,0.16) 100%)",
-                    filter: isFever ? `hue-rotate(${feverHue}deg)` : undefined,
+                    background: isFever
+                      ? "radial-gradient(circle at 50% 48%, rgba(0,0,0,0) 45%, rgba(20,0,18,0.52) 100%)"
+                      : "radial-gradient(circle at 50% 48%, rgba(0,0,0,0) 68%, rgba(72,56,28,0.15) 100%)",
                   }}
                 />
-
+    
                 {/* Impact Frame Flash */}
                 {isImpactFlash && (
                   <div
@@ -2368,10 +2788,9 @@ jobs:
             );
           };
           EOF
-
+    
           # --------------------------------------------------------------------
           # 11. Main Remotion Composition (src/Video.tsx)
-          #     flat={true} disables ACESFilmicToneMapping -> PURE bright 2D colors!
           # --------------------------------------------------------------------
           cat << 'EOF' > gym-anim/src/Video.tsx
           import React from "react";
@@ -2381,15 +2800,15 @@ jobs:
           import { OverthinkerScene } from "./scene/OverthinkerScene";
           import { ComicOverlay } from "./components/ComicOverlay";
           import { PALETTE } from "./utils/animation";
-
+    
           export interface VideoProps {
             includeAudio?: boolean;
           }
-
+    
           export const OverthinkerVideo: React.FC<VideoProps> = ({ includeAudio = true }) => {
             const frame = useCurrentFrame();
             const { width, height, fps } = useVideoConfig();
-
+    
             return (
               <AbsoluteFill style={{ backgroundColor: PALETTE.bgPaper }}>
                 {includeAudio && <Audio src={staticFile("soundtrack.wav")} volume={1.0} />}
@@ -2409,7 +2828,7 @@ jobs:
             );
           };
           EOF
-
+    
           # --------------------------------------------------------------------
           # 12. Remotion Root & Entrypoint (src/Root.tsx & src/index.ts)
           # --------------------------------------------------------------------
@@ -2417,7 +2836,7 @@ jobs:
           import React from "react";
           import { Composition } from "remotion";
           import { OverthinkerVideo } from "./Video";
-
+    
           export const RemotionRoot: React.FC = () => {
             return (
               <Composition
@@ -2432,31 +2851,31 @@ jobs:
             );
           };
           EOF
-
+    
           cat << 'EOF' > gym-anim/src/index.ts
           import { registerRoot } from "remotion";
           import { RemotionRoot } from "./Root";
-
+    
           registerRoot(RemotionRoot);
           EOF
-
+    
       - name: Install Node Dependencies & Ensure Remotion Browser
         working-directory: gym-anim
         run: |
           npm install --legacy-peer-deps
           npx remotion browser ensure
-
-      - name: Synthesize Synced Comedy SFX & Soundtrack WAV
+    
+      - name: Synthesize Synced Comedy SFX, Heartbeat & Gym Foley WAV
         working-directory: gym-anim
         run: |
           node scripts/generate-audio.mjs
-
-      - name: Render 1080x1920 Funny Animation MP4 (Three.js + Remotion v3)
+    
+      - name: Render 1080x1920 Funny Animation MP4 (Three.js + Remotion v4)
         working-directory: gym-anim
         run: |
           INCLUDE_AUDIO_VAL="${{ github.event.inputs.include_audio }}"
           if [ -z "$INCLUDE_AUDIO_VAL" ]; then INCLUDE_AUDIO_VAL="true"; fi
-
+    
           npx remotion render src/index.ts OverthinkerAtGym out/overthinker-at-gym.mp4 \
             --gl=swangle \
             --codec=h264 \
@@ -2466,10 +2885,10 @@ jobs:
             --log=info
           ls -lh out/overthinker-at-gym.mp4
           ffprobe -v error -show_format -show_streams out/overthinker-at-gym.mp4
-
+    
       - name: Upload Rendered Animation MP4 Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: overthinker-at-gym-short-v3-mp4
+          name: overthinker-at-gym-short-v4-mp4
           path: gym-anim/out/overthinker-at-gym.mp4
           retention-days: 14
