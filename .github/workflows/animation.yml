@@ -1,0 +1,2035 @@
+
+name: Render Funny Gym Overthinker Animation (Three.js + Remotion)
+
+on:
+  workflow_dispatch:
+    inputs:
+      quality_crf:
+        description: "FFmpeg H.264 CRF quality (14=ultra, 18=high, 23=standard)"
+        required: false
+        default: "18"
+      concurrency:
+        description: "Remotion render worker concurrency (2-4 recommended on GHA)"
+        required: false
+        default: "2"
+      fps:
+        description: "Frames per second (30 recommended)"
+        required: false
+        default: "30"
+      include_audio:
+        description: "Include procedural comedy SFX & lo-fi soundtrack"
+        type: boolean
+        required: false
+        default: true
+
+jobs:
+  render-overthinker-animation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install headless Chromium, WebGL (SwiftShader/ANGLE) & FFmpeg libs
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            ffmpeg \
+            libnss3 \
+            libatk1.0-0 \
+            libatk-bridge2.0-0 \
+            libcups2 \
+            libdrm2 \
+            libxkbcommon0 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxfixes3 \
+            libxrandr2 \
+            libgbm1 \
+            libpango-1.0-0 \
+            libcairo2 \
+            fonts-noto-color-emoji \
+            fonts-dejavu-core
+          sudo apt-get install -y libasound2t64 || sudo apt-get install -y libasound2
+
+      - name: Scaffold Remotion + Three.js Project Structure
+        run: |
+          mkdir -p gym-anim/src/scene gym-anim/src/components gym-anim/src/utils gym-anim/scripts gym-anim/public gym-anim/out
+
+          # --------------------------------------------------------------------
+          # 1. package.json
+          # --------------------------------------------------------------------
+          cat << 'EOF' > gym-anim/package.json
+          {
+            "name": "overthinker-at-the-gym-three-remotion",
+            "version": "1.0.0",
+            "private": true,
+            "scripts": {
+              "audio": "node scripts/generate-audio.mjs",
+              "render": "remotion render src/index.ts OverthinkerAtGym out/overthinker-at-gym.mp4"
+            },
+            "dependencies": {
+              "@react-three/fiber": "8.17.10",
+              "@remotion/bundler": "4.0.242",
+              "@remotion/cli": "4.0.242",
+              "@remotion/three": "4.0.242",
+              "react": "18.3.1",
+              "react-dom": "18.3.1",
+              "remotion": "4.0.242",
+              "three": "0.169.0"
+            },
+            "devDependencies": {
+              "@types/react": "18.3.12",
+              "@types/three": "0.169.0",
+              "typescript": "5.6.3"
+            }
+          }
+          EOF
+
+          # --------------------------------------------------------------------
+          # 2. tsconfig.json
+          # --------------------------------------------------------------------
+          cat << 'EOF' > gym-anim/tsconfig.json
+          {
+            "compilerOptions": {
+              "target": "ES2022",
+              "module": "ESNext",
+              "moduleResolution": "bundler",
+              "jsx": "react-jsx",
+              "strict": false,
+              "esModuleInterop": true,
+              "skipLibCheck": true,
+              "forceConsistentCasingInFileNames": true,
+              "lib": ["DOM", "ES2022"]
+            },
+            "include": ["src"]
+          }
+          EOF
+
+          # --------------------------------------------------------------------
+          # 3. remotion.config.ts
+          # --------------------------------------------------------------------
+          cat << 'EOF' > gym-anim/remotion.config.ts
+          import { Config } from "@remotion/cli/config";
+
+          Config.setVideoImageFormat("jpeg");
+          Config.setOverwriteOutput(true);
+          Config.setChromiumOpenGlRenderer("swangle");
+          Config.setPixelFormat("yuv420p");
+          EOF
+
+          # --------------------------------------------------------------------
+          # 4. Procedural Comedy Audio Synthesizer (scripts/generate-audio.mjs)
+          #    Generates 32s Stereo 44.1kHz WAV synced to every gag & camera cut
+          # --------------------------------------------------------------------
+          cat << 'EOF' > gym-anim/scripts/generate-audio.mjs
+          import fs from "node:fs";
+          import path from "node:path";
+
+          const SAMPLE_RATE = 44100;
+          const DURATION = 32;
+          const TOTAL_SAMPLES = SAMPLE_RATE * DURATION;
+
+          const left = new Float32Array(TOTAL_SAMPLES);
+          const right = new Float32Array(TOTAL_SAMPLES);
+
+          const clamp = (v, min = -1, max = 1) => Math.max(min, Math.min(max, v));
+
+          function addSample(idx, l, r = l) {
+            if (idx >= 0 && idx < TOTAL_SAMPLES) {
+              left[idx] += l;
+              right[idx] += r;
+            }
+          }
+
+          // Deterministic pseudo-random for vinyl crackle & foley noise
+          let rngState = 1337420;
+          function rand() {
+            rngState = (rngState * 1664525 + 1013904223) >>> 0;
+            return (rngState / 4294967296) * 2 - 1;
+          }
+
+          // 1. Dreamy Lo-Fi Electric Piano (Peaceful Gym BGM)
+          function addLofiSegment(startSec, endSec, gain = 0.22) {
+            const chords = [
+              [261.63, 329.63, 392.0, 493.88], // Cmaj7
+              [220.0, 261.63, 329.63, 392.0],  // Am7
+              [174.61, 220.0, 261.63, 329.63], // Fmaj7
+              [196.0, 246.94, 293.66, 349.23], // G7
+            ];
+            const startIdx = Math.floor(startSec * SAMPLE_RATE);
+            const endIdx = Math.floor(endSec * SAMPLE_RATE);
+            for (let i = startIdx; i < endIdx; i++) {
+              const t = i / SAMPLE_RATE;
+              const localT = t - startSec;
+              const chordIdx = Math.floor(localT / 1.2) % chords.length;
+              const chordTime = localT % 1.2;
+              const env = Math.min(1, chordTime * 18) * Math.exp(-chordTime * 1.45);
+              let sig = 0;
+              for (const freq of chords[chordIdx]) {
+                const vibrato = 1 + 0.003 * Math.sin(2 * Math.PI * 4.5 * t);
+                sig += Math.sin(2 * Math.PI * freq * vibrato * t) * 0.65;
+                sig += Math.sin(2 * Math.PI * freq * 2 * vibrato * t) * 0.15 * Math.exp(-chordTime * 5);
+              }
+              // Soft lo-fi kick on beat
+              const beatT = localT % 0.6;
+              const kick = Math.sin(2 * Math.PI * (110 * Math.exp(-beatT * 28) + 42) * beatT) * Math.exp(-beatT * 12) * 0.45;
+              // Fade edges cleanly
+              const fade = Math.min(1, localT * 6, (endSec - t) * 10);
+              const val = (sig * 0.25 * env + kick) * gain * Math.max(0, fade);
+              addSample(i, val * 0.96, val * 1.04);
+            }
+          }
+
+          // 2. Classic Dramatic Vine Boom
+          function addVineBoom(timeSec, intensity = 0.85) {
+            const startIdx = Math.floor(timeSec * SAMPLE_RATE);
+            const len = Math.floor(1.4 * SAMPLE_RATE);
+            let phase = 0;
+            for (let n = 0; n < len; n++) {
+              const t = n / SAMPLE_RATE;
+              const freq = 145 * Math.exp(-t * 9.5) + 33;
+              phase += (2 * Math.PI * freq) / SAMPLE_RATE;
+              const env = Math.min(1, t * 250) * Math.exp(-t * 2.9);
+              const raw = Math.sin(phase) * 1.6 + Math.sin(phase * 2) * 0.35 + rand() * 0.18 * Math.exp(-t * 22);
+              const saturated = Math.tanh(raw * 1.5) * env * intensity;
+              addSample(startIdx + n, saturated, saturated);
+            }
+          }
+
+          // 3. Cartoon Panic Tremble / Sweat Pop ticks
+          function addPanicTicks(startSec, endSec, rateHz = 14, gain = 0.28) {
+            for (let t = startSec; t < endSec; t += 1 / rateHz) {
+              const startIdx = Math.floor(t * SAMPLE_RATE);
+              const dur = Math.floor(0.045 * SAMPLE_RATE);
+              const baseF = 550 + ((Math.floor(t * 37) % 5) * 110);
+              for (let n = 0; n < dur; n++) {
+                const nt = n / SAMPLE_RATE;
+                const f = baseF + nt * 3200;
+                const env = Math.exp(-nt * 65);
+                const s = Math.sin(2 * Math.PI * f * nt) * env * gain;
+                const pan = (Math.floor(t * 10) % 2 === 0) ? 0.8 : 1.2;
+                addSample(startIdx + n, s * pan, s * (2 - pan));
+              }
+            }
+          }
+
+          // 4. Ominous Rising Tension Brass / Anime Dread Drone
+          function addTensionDrone(startSec, endSec, gain = 0.32) {
+            const startIdx = Math.floor(startSec * SAMPLE_RATE);
+            const endIdx = Math.floor(endSec * SAMPLE_RATE);
+            const dur = endSec - startSec;
+            let p1 = 0, p2 = 0, p3 = 0;
+            for (let i = startIdx; i < endIdx; i++) {
+              const prog = (i - startIdx) / (endIdx - startIdx);
+              const f1 = 65 + prog * 45;
+              const f2 = 98 + prog * 72;
+              const f3 = 131 + prog * 160;
+              p1 += (2 * Math.PI * f1) / SAMPLE_RATE;
+              p2 += (2 * Math.PI * f2) / SAMPLE_RATE;
+              p3 += (2 * Math.PI * f3) / SAMPLE_RATE;
+              const env = Math.min(1, prog * 5) * Math.min(1, (1 - prog) * 12);
+              const pulse = 0.75 + 0.25 * Math.sin(2 * Math.PI * (3 + prog * 9) * (prog * dur));
+              const brass = Math.tanh((Math.sin(p1) + 0.7 * Math.sin(p2) + 0.5 * Math.sin(p3)) * 1.4);
+              const v = brass * env * pulse * gain;
+              addSample(i, v, v);
+            }
+          }
+
+          // 5. Waterfall / Tear Geyser Whoosh
+          function addWaterfall(startSec, endSec, gain = 0.35) {
+            const startIdx = Math.floor(startSec * SAMPLE_RATE);
+            const endIdx = Math.floor(endSec * SAMPLE_RATE);
+            let lp = 0;
+            for (let i = startIdx; i < endIdx; i++) {
+              const prog = (i - startIdx) / (endIdx - startIdx);
+              const n = rand();
+              lp = lp * 0.82 + n * 0.18;
+              const env = Math.min(1, prog * 12) * Math.min(1, (1 - prog) * 8);
+              const bubble = Math.sin(2 * Math.PI * (320 + 180 * Math.sin(prog * 45)) * (i / SAMPLE_RATE)) * 0.15;
+              const v = (lp * 1.7 + bubble) * env * gain;
+              addSample(i, v, v * 0.92);
+            }
+          }
+
+          // 6. Heavy Barbell Crash + Comic Spring Boing
+          function addBarbellCrash(timeSec) {
+            const startIdx = Math.floor(timeSec * SAMPLE_RATE);
+            const len = Math.floor(1.1 * SAMPLE_RATE);
+            let lp = 0;
+            for (let n = 0; n < len; n++) {
+              const t = n / SAMPLE_RATE;
+              const thud = Math.sin(2 * Math.PI * (90 * Math.exp(-t * 16) + 28) * t) * Math.exp(-t * 5.5) * 0.8;
+              const clang = (Math.sin(2 * Math.PI * 412 * t) + Math.sin(2 * Math.PI * 637 * t) + Math.sin(2 * Math.PI * 981 * t)) * Math.exp(-t * 7.5) * 0.25;
+              lp = lp * 0.65 + rand() * 0.35;
+              const crunch = lp * Math.exp(-t * 10) * 0.45;
+              const boing = Math.sin(2 * Math.PI * (180 + 95 * Math.sin(2 * Math.PI * 11 * t)) * t) * Math.exp(-t * 3.8) * 0.22;
+              const v = clamp(thud + clang + crunch + boing);
+              addSample(startIdx + n, v, v);
+            }
+          }
+
+          // 7. Manic Fever-Dream Laughing Synth + Wobble
+          function addFeverDreamLaugh(startSec, endSec, gain = 0.34) {
+            const startIdx = Math.floor(startSec * SAMPLE_RATE);
+            const endIdx = Math.floor(endSec * SAMPLE_RATE);
+            let phase = 0;
+            for (let i = startIdx; i < endIdx; i++) {
+              const t = (i - startIdx) / SAMPLE_RATE;
+              const prog = (i - startIdx) / (endIdx - startIdx);
+              const haRate = 7.5 + prog * 4.5;
+              const haEnv = Math.pow(Math.max(0, Math.sin(Math.PI * haRate * t)), 1.6);
+              const pitch = (480 - prog * 110) + 190 * Math.sin(2 * Math.PI * (haRate * 0.5) * t) + 70 * Math.sin(2 * Math.PI * 22 * t);
+              phase += (2 * Math.PI * Math.max(120, pitch)) / SAMPLE_RATE;
+              const wave = Math.tanh((Math.sin(phase) + 0.6 * Math.sin(phase * 2.02) + 0.3 * Math.sin(phase * 3.01)) * 1.3);
+              const pan = 0.5 + 0.45 * Math.sin(2 * Math.PI * 3.2 * t);
+              const fade = Math.min(1, t * 8, (endSec - startSec - t) * 14);
+              const v = wave * haEnv * gain * Math.max(0, fade);
+              addSample(i, v * (1.4 - pan), v * (0.6 + pan));
+            }
+          }
+
+          // 8. Vinyl Record Scratch (Reality Snap)
+          function addRecordScratch(timeSec) {
+            const startIdx = Math.floor(timeSec * SAMPLE_RATE);
+            const len = Math.floor(0.28 * SAMPLE_RATE);
+            let phase = 0;
+            for (let n = 0; n < len; n++) {
+              const t = n / SAMPLE_RATE;
+              const freq = 1400 - 1100 * Math.sin((t / 0.28) * Math.PI * 1.5);
+              phase += (2 * Math.PI * freq) / SAMPLE_RATE;
+              const env = Math.sin((n / len) * Math.PI);
+              const v = (Math.sin(phase) * 0.5 + rand() * 0.25) * env * 0.5;
+              addSample(startIdx + n, v, v);
+            }
+          }
+
+          // 9. Cute Polite Chime ("NEED HELP?")
+          function addPoliteChime(timeSec) {
+            const notes = [
+              { offset: 0.0, freq: 880 },
+              { offset: 0.14, freq: 1174.66 },
+            ];
+            for (const note of notes) {
+              const startIdx = Math.floor((timeSec + note.offset) * SAMPLE_RATE);
+              const len = Math.floor(0.65 * SAMPLE_RATE);
+              for (let n = 0; n < len; n++) {
+                const t = n / SAMPLE_RATE;
+                const env = Math.min(1, t * 90) * Math.exp(-t * 6.5);
+                const s = (Math.sin(2 * Math.PI * note.freq * t) + 0.25 * Math.sin(2 * Math.PI * note.freq * 2 * t)) * env * 0.35;
+                addSample(startIdx + n, s, s);
+              }
+            }
+          }
+
+          // 10. Cartoon Rocket-Drop Slide Whistle + Floor Zip Punchline
+          function addCartoonZipOut(timeSec) {
+            const startIdx = Math.floor(timeSec * SAMPLE_RATE);
+            const len = Math.floor(0.55 * SAMPLE_RATE);
+            let phase = 0;
+            for (let n = 0; n < len; n++) {
+              const t = n / SAMPLE_RATE;
+              const freq = 2400 * Math.exp(-t * 6.2) + 120;
+              phase += (2 * Math.PI * freq) / SAMPLE_RATE;
+              const env = Math.min(1, t * 60) * Math.exp(-t * 3.5);
+              const whistle = Math.sin(phase) * env * 0.52;
+              const whoosh = rand() * Math.exp(-t * 9) * 0.25;
+              addSample(startIdx + n, whistle + whoosh, whistle + whoosh);
+            }
+            addVineBoom(timeSec + 0.22, 0.72);
+          }
+
+          // === Timeline Audio Arrangement (Synced to 30fps / 960 frames) ===
+          addLofiSegment(0.0, 2.3, 0.26);          // Shot 1: Peaceful lat pulldown
+          addVineBoom(2.25, 0.85);                 // Girl glare snap
+          addPanicTicks(2.6, 5.0, 15, 0.24);       // Shot 2: Overthinker panic tremble
+          addVineBoom(4.75, 0.8);                  // Cut to angry girl
+          addVineBoom(6.9, 0.75);                  // Shot 3: Buff bro judgment glare
+          addPanicTicks(7.9, 10.8, 17, 0.26);      // Shot 4: Melting face + shy fingers
+          addTensionDrone(10.8, 17.8, 0.35);       // Shot 5-6: Imaginary massive barbell + spotter
+          addVineBoom(13.2, 0.9);                  // Giant plates slam
+          addWaterfall(15.6, 18.0, 0.38);          // Overhead press tear waterfall
+          addBarbellCrash(18.0);                   // Shot 7: Barbell crashes onto buff bro lap
+          addVineBoom(19.7, 0.88);                 // Girl maniacal point cut
+          addFeverDreamLaugh(20.0, 23.9, 0.36);    // Shot 8: Trippy floating laughing faces
+          addRecordScratch(24.0);                  // Shot 9: Snap back to reality!
+          addLofiSegment(24.3, 28.9, 0.25);        // Peaceful reality: nobody is watching
+          addVineBoom(27.0, 0.78);                 // Zoom out reveal: EMPTY BARBELL!
+          addPoliteChime(28.55);                   // Shot 10: Friendly girl "NEED HELP?"
+          addCartoonZipOut(30.0);                  // Overthinker vanishes through the floor!
+
+          // Master soft limiter + write 16-bit Stereo PCM WAV
+          const dataSize = TOTAL_SAMPLES * 4;
+          const buffer = Buffer.alloc(44 + dataSize);
+          buffer.write("RIFF", 0);
+          buffer.writeUInt32LE(36 + dataSize, 4);
+          buffer.write("WAVE", 8);
+          buffer.write("fmt ", 12);
+          buffer.writeUInt32LE(16, 16);
+          buffer.writeUInt16LE(1, 20);
+          buffer.writeUInt16LE(2, 22);
+          buffer.writeUInt32LE(SAMPLE_RATE, 24);
+          buffer.writeUInt32LE(SAMPLE_RATE * 4, 28);
+          buffer.writeUInt16LE(4, 32);
+          buffer.writeUInt16LE(16, 34);
+          buffer.write("data", 36);
+          buffer.writeUInt32LE(dataSize, 40);
+
+          let offset = 44;
+          for (let i = 0; i < TOTAL_SAMPLES; i++) {
+            const l = Math.round(clamp(Math.tanh(left[i] * 0.92)) * 32767);
+            const r = Math.round(clamp(Math.tanh(right[i] * 0.92)) * 32767);
+            buffer.writeInt16LE(l, offset);
+            buffer.writeInt16LE(r, offset + 2);
+            offset += 4;
+          }
+
+          const outPath = path.join("public", "soundtrack.wav");
+          fs.writeFileSync(outPath, buffer);
+          console.log(`Generated comedy soundtrack WAV: ${outPath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
+          EOF
+
+          # --------------------------------------------------------------------
+          # 5. Deterministic Animation & Storyboard Utilities (src/utils/animation.ts)
+          # --------------------------------------------------------------------
+          cat << 'EOF' > gym-anim/src/utils/animation.ts
+          import { interpolate, Easing } from "remotion";
+
+          export const PALETTE = {
+            bgPaper: "#E2D2A8",
+            bgWall: "#D7C596",
+            bgMachine: "#CEBC8D",
+            bgWindow: "#EFE5C7",
+            citySilhouette: "#D8C9A2",
+            ink: "#151311",
+            skinWhite: "#FBFBF8",
+            shirtWhite: "#F5F4EF",
+            broTank: "#626468",
+            broShorts: "#4A4C50",
+            girlTop: "#F2F1EC",
+            girlLeggings: "#F7F6F2",
+            sweatBlue: "#5CC8FF",
+            speedRed: "#A82B1E",
+            plateGold: "#D4C08E",
+          } as const;
+
+          export function clamp01(v: number): number {
+            return Math.max(0, Math.min(1, v));
+          }
+
+          export function segProgress(frame: number, start: number, end: number): number {
+            return clamp01((frame - start) / Math.max(1, end - start));
+          }
+
+          export function smoothStep(t: number): number {
+            const x = clamp01(t);
+            return x * x * (3 - 2 * x);
+          }
+
+          export function easeOutBack(t: number): number {
+            const x = clamp01(t);
+            const c1 = 1.70158;
+            const c3 = c1 + 1;
+            return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+          }
+
+          // Deterministic hand-drawn 12fps "line boil" jitter
+          export function boilJitter(frame: number, seed: number, amp = 0.006): number {
+            const step = Math.floor(frame / 2.5);
+            const raw = Math.sin(step * 12.9898 + seed * 78.233) * 43758.5453;
+            return ((raw - Math.floor(raw)) * 2 - 1) * amp;
+          }
+
+          // Deterministic trauma camera shake
+          export function cameraShake(frame: number, intensity: number): [number, number, number] {
+            if (intensity <= 0.0001) return [0, 0, 0];
+            const x = Math.sin(frame * 2.71) * Math.cos(frame * 4.33) * intensity;
+            const y = Math.cos(frame * 3.17) * Math.sin(frame * 5.19) * intensity;
+            const r = Math.sin(frame * 3.89) * intensity * 0.14;
+            return [x, y, r];
+          }
+
+          export function lerp(a: number, b: number, t: number): number {
+            return a + (b - a) * clamp01(t);
+          }
+
+          export function rangeMap(
+            frame: number,
+            inMin: number,
+            inMax: number,
+            outMin: number,
+            outMax: number,
+            ease?: (t: number) => number
+          ): number {
+            return interpolate(frame, [inMin, inMax], [outMin, outMax], {
+              extrapolateLeft: "clamp",
+              extrapolateRight: "clamp",
+              easing: ease ?? Easing.inOut(Easing.ease),
+            });
+          }
+          EOF
+
+          # --------------------------------------------------------------------
+          # 6. 2D Hand-Inked Cel-Shader Primitives (src/scene/ToonMaterial.tsx)
+          #    Inverted-hull crisp black ink outlines + 2-tone cel shading
+          # --------------------------------------------------------------------
+          cat << 'EOF' > gym-anim/src/scene/ToonMaterial.tsx
+          import React, { useMemo } from "react";
+          import * as THREE from "three";
+          import { PALETTE, boilJitter } from "../utils/animation";
+
+          let cachedGradientMap: THREE.DataTexture | null = null;
+
+          export function useToonGradient(): THREE.DataTexture {
+            return useMemo(() => {
+              if (cachedGradientMap) return cachedGradientMap;
+              const colors = new Uint8Array([225, 255]);
+              const tex = new THREE.DataTexture(colors, 2, 1, THREE.RedFormat);
+              tex.minFilter = THREE.NearestFilter;
+              tex.magFilter = THREE.NearestFilter;
+              tex.needsUpdate = true;
+              cachedGradientMap = tex;
+              return tex;
+            }, []);
+          }
+
+          interface BaseInkProps {
+            position?: [number, number, number];
+            rotation?: [number, number, number];
+            scale?: [number, number, number];
+            color?: string;
+            outline?: number;
+            outlineColor?: string;
+            frame?: number;
+            seed?: number;
+          }
+
+          export const InkBox: React.FC<BaseInkProps & { args: [number, number, number] }> = ({
+            args,
+            position = [0, 0, 0],
+            rotation = [0, 0, 0],
+            scale = [1, 1, 1],
+            color = PALETTE.bgMachine,
+            outline = 0.032,
+            outlineColor = PALETTE.ink,
+            frame = 0,
+            seed = 1,
+          }) => {
+            const grad = useToonGradient();
+            const j = boilJitter(frame, seed, 0.003);
+            return (
+              <group position={position} rotation={rotation} scale={scale}>
+                <mesh>
+                  <boxGeometry args={args} />
+                  <meshToonMaterial color={color} gradientMap={grad} />
+                </mesh>
+                {outline > 0 && (
+                  <mesh position={[j, -j, 0]}>
+                    <boxGeometry args={[args[0] + outline * 2, args[1] + outline * 2, args[2] + outline * 2]} />
+                    <meshBasicMaterial color={outlineColor} side={THREE.BackSide} />
+                  </mesh>
+                )}
+              </group>
+            );
+          };
+
+          export const InkSphere: React.FC<BaseInkProps & { args: [number, number?, number?] }> = ({
+            args,
+            position = [0, 0, 0],
+            rotation = [0, 0, 0],
+            scale = [1, 1, 1],
+            color = PALETTE.skinWhite,
+            outline = 0.032,
+            outlineColor = PALETTE.ink,
+            frame = 0,
+            seed = 2,
+          }) => {
+            const grad = useToonGradient();
+            const [r, w = 22, h = 18] = args;
+            const j = boilJitter(frame, seed, 0.0035);
+            return (
+              <group position={position} rotation={rotation} scale={scale}>
+                <mesh>
+                  <sphereGeometry args={[r, w, h]} />
+                  <meshToonMaterial color={color} gradientMap={grad} />
+                </mesh>
+                {outline > 0 && (
+                  <mesh position={[j, -j, 0]}>
+                    <sphereGeometry args={[r + outline, w, h]} />
+                    <meshBasicMaterial color={outlineColor} side={THREE.BackSide} />
+                  </mesh>
+                )}
+              </group>
+            );
+          };
+
+          export const InkCylinder: React.FC<BaseInkProps & { args: [number, number, number, number?] }> = ({
+            args,
+            position = [0, 0, 0],
+            rotation = [0, 0, 0],
+            scale = [1, 1, 1],
+            color = PALETTE.skinWhite,
+            outline = 0.028,
+            outlineColor = PALETTE.ink,
+            frame = 0,
+            seed = 3,
+          }) => {
+            const grad = useToonGradient();
+            const [rt, rb, h, seg = 16] = args;
+            const j = boilJitter(frame, seed, 0.003);
+            return (
+              <group position={position} rotation={rotation} scale={scale}>
+                <mesh>
+                  <cylinderGeometry args={[rt, rb, h, seg]} />
+                  <meshToonMaterial color={color} gradientMap={grad} />
+                </mesh>
+                {outline > 0 && (
+                  <mesh position={[j, 0, 0]}>
+                    <cylinderGeometry args={[rt + outline, rb + outline, h + outline * 1.4, seg]} />
+                    <meshBasicMaterial color={outlineColor} side={THREE.BackSide} />
+                  </mesh>
+                )}
+              </group>
+            );
+          };
+
+          export const InkCapsule: React.FC<BaseInkProps & { args: [number, number, number?, number?] }> = ({
+            args,
+            position = [0, 0, 0],
+            rotation = [0, 0, 0],
+            scale = [1, 1, 1],
+            color = PALETTE.skinWhite,
+            outline = 0.026,
+            outlineColor = PALETTE.ink,
+            frame = 0,
+            seed = 4,
+          }) => {
+            const grad = useToonGradient();
+            const [r, len, capSeg = 8, radSeg = 14] = args;
+            const j = boilJitter(frame, seed, 0.0025);
+            return (
+              <group position={position} rotation={rotation} scale={scale}>
+                <mesh>
+                  <capsuleGeometry args={[r, len, capSeg, radSeg]} />
+                  <meshToonMaterial color={color} gradientMap={grad} />
+                </mesh>
+                {outline > 0 && (
+                  <mesh position={[j, -j, 0]}>
+                    <capsuleGeometry args={[r + outline, len + outline * 0.4, capSeg, radSeg]} />
+                    <meshBasicMaterial color={outlineColor} side={THREE.BackSide} />
+                  </mesh>
+                )}
+              </group>
+            );
+          };
+          EOF
+
+          # --------------------------------------------------------------------
+          # 7. Detailed 3D Gym Environment (src/scene/GymEnvironment.tsx)
+          #    Lat Pulldown Machine, Squat Rack, Dumbbell Rack, Bench, Window Skyline
+          # --------------------------------------------------------------------
+          cat << 'EOF' > gym-anim/src/scene/GymEnvironment.tsx
+          import React from "react";
+          import { InkBox, InkCylinder } from "./ToonMaterial";
+          import { PALETTE } from "../utils/animation";
+
+          interface GymEnvProps {
+            frame: number;
+            pulldownProgress: number; // 0 = top, 1 = pulled down
+          }
+
+          export const LatPulldownMachine: React.FC<{
+            position?: [number, number, number];
+            rotation?: [number, number, number];
+            pulldownProgress: number;
+            frame: number;
+          }> = ({ position = [0, 0, 0], rotation = [0, 0, 0], pulldownProgress, frame }) => {
+            const barY = 2.15 - pulldownProgress * 0.58;
+            const stackY = 0.72 + pulldownProgress * 0.42;
+            const cableLen = Math.max(0.1, 2.65 - barY);
+
+            return (
+              <group position={position} rotation={rotation}>
+                {/* Base frame */}
+                <InkBox args={[1.45, 0.1, 0.9]} position={[0, 0.05, 0]} color={PALETTE.bgMachine} outline={0.022} frame={frame} seed={10} />
+                {/* Rear upright column */}
+                <InkBox args={[0.14, 2.75, 0.14]} position={[0.55, 1.42, 0]} color={PALETTE.bgMachine} outline={0.024} frame={frame} seed={11} />
+                <InkBox args={[0.14, 2.75, 0.14]} position={[0.92, 1.42, 0]} color={PALETTE.bgMachine} outline={0.024} frame={frame} seed={12} />
+                {/* Top beam */}
+                <InkBox args={[1.3, 0.14, 0.16]} position={[0.35, 2.72, 0]} color={PALETTE.bgMachine} outline={0.024} frame={frame} seed={13} />
+
+                {/* Weight stack plates */}
+                {[0, 1, 2, 3, 4].map((idx) => (
+                  <InkBox
+                    key={idx}
+                    args={[0.32, 0.09, 0.24]}
+                    position={[0.73, stackY + idx * 0.11, 0]}
+                    color={PALETTE.plateGold}
+                    outline={0.018}
+                    frame={frame}
+                    seed={20 + idx}
+                  />
+                ))}
+
+                {/* Cable line */}
+                <InkCylinder
+                  args={[0.012, 0.012, cableLen, 8]}
+                  position={[-0.12, barY + cableLen / 2, 0]}
+                  color={PALETTE.ink}
+                  outline={0}
+                />
+
+                {/* Lat pulldown handle bar */}
+                <group position={[-0.12, barY, 0]}>
+                  <InkCylinder
+                    args={[0.024, 0.024, 0.85, 10]}
+                    rotation={[Math.PI / 2, 0, 0]}
+                    color={PALETTE.bgMachine}
+                    outline={0.016}
+                    frame={frame}
+                    seed={30}
+                  />
+                  <InkCylinder
+                    args={[0.024, 0.024, 0.26, 10]}
+                    position={[0, -0.08, 0.48]}
+                    rotation={[Math.PI / 2 + 0.55, 0, 0]}
+                    color={PALETTE.bgMachine}
+                    outline={0.016}
+                    frame={frame}
+                    seed={31}
+                  />
+                  <InkCylinder
+                    args={[0.024, 0.024, 0.26, 10]}
+                    position={[0, -0.08, -0.48]}
+                    rotation={[Math.PI / 2 - 0.55, 0, 0]}
+                    color={PALETTE.bgMachine}
+                    outline={0.016}
+                    frame={frame}
+                    seed={32}
+                  />
+                </group>
+
+                {/* Seat post + cushion */}
+                <InkBox args={[0.1, 0.58, 0.1]} position={[-0.36, 0.34, 0]} color={PALETTE.bgMachine} outline={0.02} frame={frame} seed={35} />
+                <InkBox args={[0.56, 0.12, 0.38]} position={[-0.36, 0.66, 0]} color={PALETTE.bgWall} outline={0.022} frame={frame} seed={36} />
+                {/* Knee roller pads */}
+                <InkCylinder
+                  args={[0.085, 0.085, 0.58, 12]}
+                  position={[0.05, 0.96, 0]}
+                  rotation={[Math.PI / 2, 0, 0]}
+                  color={PALETTE.bgWall}
+                  outline={0.022}
+                  frame={frame}
+                  seed={37}
+                />
+              </group>
+            );
+          };
+
+          export const SquatRack: React.FC<{
+            position?: [number, number, number];
+            rotation?: [number, number, number];
+            frame: number;
+          }> = ({ position = [0, 0, 0], rotation = [0, 0, 0], frame }) => {
+            return (
+              <group position={position} rotation={rotation}>
+                {/* Floor feet */}
+                <InkBox args={[0.16, 0.09, 1.3]} position={[-0.78, 0.045, 0]} color={PALETTE.bgMachine} outline={0.024} frame={frame} seed={40} />
+                <InkBox args={[0.16, 0.09, 1.3]} position={[0.78, 0.045, 0]} color={PALETTE.bgMachine} outline={0.024} frame={frame} seed={41} />
+                {/* Main vertical steel posts */}
+                <InkBox args={[0.15, 2.75, 0.15]} position={[-0.78, 1.42, 0]} color={PALETTE.bgMachine} outline={0.028} frame={frame} seed={42} />
+                <InkBox args={[0.15, 2.75, 0.15]} position={[0.78, 1.42, 0]} color={PALETTE.bgMachine} outline={0.028} frame={frame} seed={43} />
+                {/* Pin holes along uprights */}
+                {[0.65, 1.05, 1.45, 1.85, 2.25].map((y, idx) => (
+                  <React.Fragment key={idx}>
+                    <mesh position={[-0.78, y, 0.082]}>
+                      <circleGeometry args={[0.026, 12]} />
+                      <meshBasicMaterial color={PALETTE.ink} />
+                    </mesh>
+                    <mesh position={[0.78, y, 0.082]}>
+                      <circleGeometry args={[0.026, 12]} />
+                      <meshBasicMaterial color={PALETTE.ink} />
+                    </mesh>
+                  </React.Fragment>
+                ))}
+                {/* Top crossbar */}
+                <InkBox args={[1.72, 0.12, 0.12]} position={[0, 2.72, 0]} color={PALETTE.bgMachine} outline={0.025} frame={frame} seed={44} />
+              </group>
+            );
+          };
+
+          export const Barbell: React.FC<{
+            position?: [number, number, number];
+            rotation?: [number, number, number];
+            plateScale?: number; // 0 = completely empty bar, 1 = normal heavy, 2.2 = absurd giant hallucination plates
+            bend?: number;       // bar flex under extreme imaginary weight
+            frame: number;
+          }> = ({ position = [0, 0, 0], rotation = [0, 0, 0], plateScale = 1, bend = 0, frame }) => {
+            const rOuter = 0.34 * plateScale;
+            const rInner = 0.28 * plateScale;
+
+            return (
+              <group position={position} rotation={rotation}>
+                {/* Center bar shaft */}
+                <InkCylinder
+                  args={[0.028, 0.028, 2.25, 12]}
+                  rotation={[0, 0, Math.PI / 2]}
+                  color={PALETTE.plateGold}
+                  outline={0.018}
+                  frame={frame}
+                  seed={50}
+                />
+                {/* Left & Right weight plates */}
+                {plateScale > 0.05 && (
+                  <>
+                    <group position={[-0.95, -bend, 0]} rotation={[0, 0, bend * 0.4]}>
+                      <InkCylinder
+                        args={[rOuter, rOuter, 0.11 * Math.max(0.7, plateScale * 0.7), 22]}
+                        rotation={[0, 0, Math.PI / 2]}
+                        color={PALETTE.plateGold}
+                        outline={0.026}
+                        frame={frame}
+                        seed={51}
+                      />
+                      <InkCylinder
+                        args={[rInner, rInner, 0.09 * Math.max(0.7, plateScale * 0.6), 20]}
+                        position={[-0.12 * Math.max(0.8, plateScale * 0.65), 0, 0]}
+                        rotation={[0, 0, Math.PI / 2]}
+                        color={PALETTE.bgMachine}
+                        outline={0.024}
+                        frame={frame}
+                        seed={52}
+                      />
+                    </group>
+                    <group position={[0.95, -bend, 0]} rotation={[0, 0, -bend * 0.4]}>
+                      <InkCylinder
+                        args={[rOuter, rOuter, 0.11 * Math.max(0.7, plateScale * 0.7), 22]}
+                        rotation={[0, 0, Math.PI / 2]}
+                        color={PALETTE.plateGold}
+                        outline={0.026}
+                        frame={frame}
+                        seed={53}
+                      />
+                      <InkCylinder
+                        args={[rInner, rInner, 0.09 * Math.max(0.7, plateScale * 0.6), 20]}
+                        position={[0.12 * Math.max(0.8, plateScale * 0.65), 0, 0]}
+                        rotation={[0, 0, Math.PI / 2]}
+                        color={PALETTE.bgMachine}
+                        outline={0.024}
+                        frame={frame}
+                        seed={54}
+                      />
+                    </group>
+                  </>
+                )}
+              </group>
+            );
+          };
+
+          export const GymEnvironment: React.FC<GymEnvProps> = ({ frame, pulldownProgress }) => {
+            return (
+              <group>
+                {/* Floor plane with wood-plank style lines */}
+                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+                  <planeGeometry args={[28, 28]} />
+                  <meshBasicMaterial color={PALETTE.bgPaper} />
+                </mesh>
+                {[-4, -2.5, -1, 0.5, 2, 3.5].map((z, i) => (
+                  <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.005, z]}>
+                    <planeGeometry args={[22, 0.016]} />
+                    <meshBasicMaterial color="#C6B589" />
+                  </mesh>
+                ))}
+
+                {/* Back Wall & Large Gym Window */}
+                <mesh position={[0, 3.2, -3.4]}>
+                  <planeGeometry args={[24, 7]} />
+                  <meshBasicMaterial color={PALETTE.bgWall} />
+                </mesh>
+                {/* Window Pane */}
+                <mesh position={[0, 2.3, -3.35]}>
+                  <planeGeometry args={[12, 3.2]} />
+                  <meshBasicMaterial color={PALETTE.bgWindow} />
+                </mesh>
+                {/* City Skyline Silhouettes outside window */}
+                {[
+                  [-4.2, 1.4, 1.1, 1.8],
+                  [-2.8, 1.8, 0.9, 2.4],
+                  [-1.5, 1.3, 1.2, 1.5],
+                  [0.2, 1.9, 1.0, 2.6],
+                  [1.7, 1.5, 1.1, 1.9],
+                  [3.3, 1.7, 1.3, 2.2],
+                ].map(([x, y, w, h], i) => (
+                  <mesh key={i} position={[x, y, -3.32]}>
+                    <planeGeometry args={[w, h]} />
+                    <meshBasicMaterial color={PALETTE.citySilhouette} />
+                  </mesh>
+                ))}
+                {/* Window mullions */}
+                {[-3.5, 0, 3.5].map((x, i) => (
+                  <InkBox key={i} args={[0.1, 3.3, 0.08]} position={[x, 2.3, -3.28]} color={PALETTE.bgMachine} outline={0.015} frame={frame} seed={60 + i} />
+                ))}
+                <InkBox args={[12.2, 0.14, 0.1]} position={[0, 0.72, -3.26]} color={PALETTE.bgMachine} outline={0.018} frame={frame} seed={65} />
+
+                {/* Background Dumbbell Rack (Left) */}
+                <group position={[-4.3, 0, -2.1]} rotation={[0, 0.25, 0]}>
+                  <InkBox args={[1.6, 0.75, 0.45]} position={[0, 0.38, 0]} color={PALETTE.bgMachine} outline={0.018} frame={frame} seed={70} />
+                  {[-0.55, -0.2, 0.15, 0.5].map((x, i) => (
+                    <InkCylinder key={i} args={[0.09, 0.09, 0.26, 10]} position={[x, 0.82, 0]} rotation={[Math.PI / 2, 0, 0]} color={PALETTE.plateGold} outline={0.014} frame={frame} seed={71 + i} />
+                  ))}
+                </group>
+
+                {/* Incline Bench (Right) */}
+                <group position={[4.1, 0, -1.3]} rotation={[0, -0.4, 0]}>
+                  <InkBox args={[0.42, 0.1, 1.15]} position={[0, 0.42, 0]} rotation={[-0.35, 0, 0]} color={PALETTE.bgMachine} outline={0.018} frame={frame} seed={80} />
+                  <InkBox args={[0.1, 0.42, 0.1]} position={[0, 0.21, -0.35]} color={PALETTE.bgMachine} outline={0.016} frame={frame} seed={81} />
+                  <InkBox args={[0.1, 0.35, 0.1]} position={[0, 0.18, 0.35]} color={PALETTE.bgMachine} outline={0.016} frame={frame} seed={82} />
+                </group>
+
+                {/* Station A (Left): Lat Pulldown Machine */}
+                <LatPulldownMachine position={[-3.2, 0, 0.2]} rotation={[0, 0.18, 0]} pulldownProgress={pulldownProgress} frame={frame} />
+
+                {/* Station B (Center): Overthinker's Squat Rack */}
+                <SquatRack position={[0, 0, 0]} frame={frame} />
+
+                {/* Station C (Right): Buff Bro's Squat Rack */}
+                <SquatRack position={[3.6, 0, 0.3]} rotation={[0, -0.22, 0]} frame={frame} />
+              </group>
+            );
+          };
+          EOF
+
+          # --------------------------------------------------------------------
+          # 8. Articulated Expressive 3D Cartoon Characters (src/scene/Characters.tsx)
+          #    Overthinker, Lat Pulldown Girl, Buff Gym Bro, Friendly Helper Girl,
+          #    Floating Laughing Faces & Tear Waterfall Particles
+          # --------------------------------------------------------------------
+          cat << 'EOF' > gym-anim/src/scene/Characters.tsx
+          import React from "react";
+          import { InkBox, InkCapsule, InkCylinder, InkSphere } from "./ToonMaterial";
+          import { PALETTE } from "../utils/animation";
+
+          // Expressive 2D-on-3D cartoon face module
+          interface FaceProps {
+            mood: "calm" | "sideeye" | "angry" | "panic" | "melt" | "shy" | "fakegrin" | "scream" | "laugh" | "smug" | "pinprick" | "blink";
+            frame: number;
+            zOffset?: number;
+            eyeScale?: number;
+          }
+
+          export const CartoonFace: React.FC<FaceProps> = ({
+            mood,
+            frame,
+            zOffset = 0.26,
+            eyeScale = 1,
+          }) => {
+            const jitterX = (mood === "panic" || mood === "scream") ? Math.sin(frame * 2.9) * 0.015 : 0;
+            const jitterY = (mood === "panic" || mood === "scream") ? Math.cos(frame * 3.4) * 0.015 : 0;
+
+            const isHugeEyes = mood === "panic" || mood === "angry" || mood === "pinprick";
+            const eScale = (isHugeEyes ? 1.48 : mood === "melt" ? 1.25 : 1.0) * eyeScale;
+            const pupilSize = mood === "pinprick" ? 0.012 : mood === "panic" ? 0.018 : mood === "angry" ? 0.024 : 0.032;
+
+            // Pupil look direction
+            let px = 0;
+            let py = 0;
+            if (mood === "sideeye" || mood === "smug") px = 0.036;
+            if (mood === "panic") {
+              px = Math.sin(frame * 0.45) * 0.022;
+              py = Math.cos(frame * 0.6) * 0.018;
+            }
+
+            return (
+              <group position={[jitterX, jitterY, zOffset]}>
+                {mood === "blink" ? (
+                  <>
+                    <mesh position={[-0.09, 0.02, 0.01]} rotation={[0, 0, -0.15]}>
+                      <planeGeometry args={[0.11, 0.025]} />
+                      <meshBasicMaterial color={PALETTE.ink} />
+                    </mesh>
+                    <mesh position={[0.09, 0.02, 0.01]} rotation={[0, 0, 0.15]}>
+                      <planeGeometry args={[0.11, 0.025]} />
+                      <meshBasicMaterial color={PALETTE.ink} />
+                    </mesh>
+                  </>
+                ) : (
+                  <>
+                    {/* Left & Right Eyes */}
+                    {[-0.095, 0.095].map((x, idx) => (
+                      <group key={idx} position={[x, 0.03, 0]} scale={[eScale, mood === "sideeye" || mood === "smug" ? 0.55 : eScale, 1]}>
+                        <mesh position={[0, 0, 0.002]}>
+                          <circleGeometry args={[0.072, 18]} />
+                          <meshBasicMaterial color={PALETTE.ink} />
+                        </mesh>
+                        <mesh position={[0, 0, 0.006]}>
+                          <circleGeometry args={[0.058, 18]} />
+                          <meshBasicMaterial color="#FFFFFF" />
+                        </mesh>
+                        <mesh position={[px, py, 0.01]}>
+                          <circleGeometry args={[pupilSize, 12]} />
+                          <meshBasicMaterial color={PALETTE.ink} />
+                        </mesh>
+                      </group>
+                    ))}
+                  </>
+                )}
+
+                {/* Eyebrows */}
+                {mood === "angry" && (
+                  <>
+                    <mesh position={[-0.095, 0.15, 0.016]} rotation={[0, 0, -0.45]}>
+                      <planeGeometry args={[0.15, 0.026]} />
+                      <meshBasicMaterial color={PALETTE.ink} />
+                    </mesh>
+                    <mesh position={[0.095, 0.15, 0.016]} rotation={[0, 0, 0.45]}>
+                      <planeGeometry args={[0.15, 0.026]} />
+                      <meshBasicMaterial color={PALETTE.ink} />
+                    </mesh>
+                  </>
+                )}
+                {(mood === "panic" || mood === "shy" || mood === "pinprick") && (
+                  <>
+                    <mesh position={[-0.1, 0.16, 0.016]} rotation={[0, 0, 0.35]}>
+                      <planeGeometry args={[0.1, 0.02]} />
+                      <meshBasicMaterial color={PALETTE.ink} />
+                    </mesh>
+                    <mesh position={[0.1, 0.16, 0.016]} rotation={[0, 0, -0.35]}>
+                      <planeGeometry args={[0.1, 0.02]} />
+                      <meshBasicMaterial color={PALETTE.ink} />
+                    </mesh>
+                  </>
+                )}
+                {(mood === "sideeye" || mood === "smug") && (
+                  <mesh position={[0.09, 0.12, 0.016]} rotation={[0, 0, 0.25]}>
+                    <planeGeometry args={[0.13, 0.022]} />
+                    <meshBasicMaterial color={PALETTE.ink} />
+                  </mesh>
+                )}
+
+                {/* Mouth expressions */}
+                {mood === "scream" && (
+                  <group position={[0, -0.09, 0.01]}>
+                    <mesh>
+                      <planeGeometry args={[0.18, 0.15]} />
+                      <meshBasicMaterial color={PALETTE.ink} />
+                    </mesh>
+                    <mesh position={[0, 0.04, 0.004]}>
+                      <planeGeometry args={[0.14, 0.032]} />
+                      <meshBasicMaterial color="#FFFFFF" />
+                    </mesh>
+                    <mesh position={[0, -0.04, 0.004]}>
+                      <planeGeometry args={[0.14, 0.032]} />
+                      <meshBasicMaterial color="#FFFFFF" />
+                    </mesh>
+                  </group>
+                )}
+                {(mood === "laugh" || mood === "fakegrin") && (
+                  <group position={[0, -0.085, 0.01]}>
+                    <mesh>
+                      <circleGeometry args={[0.085, 16, Math.PI, Math.PI]} />
+                      <meshBasicMaterial color={PALETTE.ink} />
+                    </mesh>
+                    <mesh position={[0, -0.015, 0.004]}>
+                      <planeGeometry args={[0.14, 0.032]} />
+                      <meshBasicMaterial color="#FFFFFF" />
+                    </mesh>
+                  </group>
+                )}
+                {(mood === "panic" || mood === "melt" || mood === "pinprick") && (
+                  <mesh position={[0, -0.095, 0.01]} rotation={[0, 0, Math.sin(frame * 1.9) * 0.12]}>
+                    <planeGeometry args={[0.09, 0.022]} />
+                    <meshBasicMaterial color={PALETTE.ink} />
+                  </mesh>
+                )}
+                {(mood === "sideeye" || mood === "angry" || mood === "smug" || mood === "calm") && (
+                  <mesh position={[0, -0.085, 0.01]} rotation={[0, 0, mood === "smug" ? 0.14 : -0.08]}>
+                    <planeGeometry args={[0.085, 0.02]} />
+                    <meshBasicMaterial color={PALETTE.ink} />
+                  </mesh>
+                )}
+              </group>
+            );
+          };
+
+          // ------------------------------------------------------------------
+          // CHARACTER 1: THE OVERTHINKER (Skinny noodle-limbed protagonist)
+          // ------------------------------------------------------------------
+          export interface OverthinkerProps {
+            position?: [number, number, number];
+            rotation?: [number, number, number];
+            frame: number;
+            pose: "hunch" | "shy" | "grabbar" | "squatstrain" | "overheadpress" | "crushed" | "realityempty" | "zipout";
+            mood: FaceProps["mood"];
+            sweating?: boolean;
+            waterfall?: boolean;
+            tremble?: number;
+            meltFactor?: number;
+          }
+
+          export const Overthinker: React.FC<OverthinkerProps> = ({
+            position = [0, 0, 0],
+            rotation = [0, 0, 0],
+            frame,
+            pose,
+            mood,
+            sweating = false,
+            waterfall = false,
+            tremble = 0,
+            meltFactor = 0,
+          }) => {
+            const tx = tremble > 0 ? Math.sin(frame * 3.8) * tremble : 0;
+            const tz = tremble > 0 ? Math.cos(frame * 4.2) * tremble * 0.5 : 0;
+
+            const isSquat = pose === "squatstrain";
+            const isPress = pose === "overheadpress";
+            const isShy = pose === "shy";
+            const isGrab = pose === "grabbar" || pose === "realityempty";
+            const isCrushed = pose === "crushed";
+
+            const hipY = isSquat ? 0.62 : isCrushed ? 0.72 : pose === "hunch" ? 0.88 : 0.94;
+            const torsoTilt = pose === "hunch" ? 0.34 : isSquat ? 0.16 : isCrushed ? -0.65 : 0;
+
+            // Arm angles by pose
+            let leftArmRot: [number, number, number] = [0.2, 0, 0.14];
+            let rightArmRot: [number, number, number] = [0.2, 0, -0.14];
+            if (isShy) {
+              leftArmRot = [-0.55, 0.45, -0.75];
+              rightArmRot = [-0.55, -0.45, 0.75];
+            } else if (isGrab || isSquat) {
+              leftArmRot = [-0.35, 0, 1.38];
+              rightArmRot = [-0.35, 0, -1.38];
+            } else if (isPress) {
+              leftArmRot = [0, 0, 2.85];
+              rightArmRot = [0, 0, -2.85];
+            } else if (isCrushed) {
+              leftArmRot = [-0.8, 0, 1.1];
+              rightArmRot = [-0.8, 0, -1.1];
+            }
+
+            return (
+              <group position={[position[0] + tx, position[1], position[2] + tz]} rotation={rotation}>
+                {/* Legs (Noodle style) */}
+                {[-0.17, 0.17].map((x, idx) => {
+                  const sgn = idx === 0 ? -1 : 1;
+                  const kneeOut = isSquat ? sgn * 0.45 : isGrab ? sgn * 0.22 : sgn * 0.08;
+                  return (
+                    <group key={idx} position={[x, hipY, 0]} rotation={[isCrushed ? -1.1 : 0, 0, kneeOut]}>
+                      {/* Thigh */}
+                      <InkCapsule args={[0.058, 0.34, 6, 12]} position={[0, -0.21, 0]} color={PALETTE.skinWhite} outline={0.022} frame={frame} seed={100 + idx} />
+                      {/* Shin */}
+                      <group position={[0, -0.42, 0]} rotation={[0, 0, -kneeOut * 1.15]}>
+                        <InkCapsule args={[0.052, 0.34, 6, 12]} position={[0, -0.2, 0]} color={PALETTE.skinWhite} outline={0.022} frame={frame} seed={105 + idx} />
+                        {/* Chunky cartoon sneaker */}
+                        <InkBox args={[0.14, 0.1, 0.24]} position={[sgn * 0.02, -0.42, 0.06]} color={PALETTE.shirtWhite} outline={0.022} frame={frame} seed={110 + idx} />
+                      </group>
+                    </group>
+                  );
+                })}
+
+                {/* Torso + Head + Arms */}
+                <group position={[0, hipY + 0.06, 0]} rotation={[torsoTilt, 0, 0]}>
+                  {/* White T-shirt Torso */}
+                  <InkCapsule args={[0.17, 0.32, 8, 14]} position={[0, 0.28, 0]} color={PALETTE.shirtWhite} outline={0.026} frame={frame} seed={120} />
+                  {/* Short sleeves */}
+                  <InkCylinder args={[0.075, 0.09, 0.18, 12]} position={[-0.22, 0.42, 0]} rotation={[0, 0, 0.55]} color={PALETTE.shirtWhite} outline={0.022} frame={frame} seed={121} />
+                  <InkCylinder args={[0.075, 0.09, 0.18, 12]} position={[0.22, 0.42, 0]} rotation={[0, 0, -0.55]} color={PALETTE.shirtWhite} outline={0.022} frame={frame} seed={122} />
+
+                  {/* Left Arm */}
+                  <group position={[-0.24, 0.44, 0]} rotation={leftArmRot}>
+                    <InkCapsule args={[0.046, 0.48, 6, 10]} position={[0, -0.28, 0]} color={PALETTE.skinWhite} outline={0.02} frame={frame} seed={123} />
+                    <InkSphere args={[0.062, 12, 10]} position={[0, -0.56, 0]} color={PALETTE.skinWhite} outline={0.02} frame={frame} seed={124} />
+                  </group>
+                  {/* Right Arm */}
+                  <group position={[0.24, 0.44, 0]} rotation={rightArmRot}>
+                    <InkCapsule args={[0.046, 0.48, 6, 10]} position={[0, -0.28, 0]} color={PALETTE.skinWhite} outline={0.02} frame={frame} seed={125} />
+                    <InkSphere args={[0.062, 12, 10]} position={[0, -0.56, 0]} color={PALETTE.skinWhite} outline={0.02} frame={frame} seed={126} />
+                  </group>
+
+                  {/* Oversized Round Cartoon Head (stretches vertically when melting!) */}
+                  <group position={[0, 0.78, 0.04]} scale={[1 - meltFactor * 0.22, 1 + meltFactor * 0.42, 1]}>
+                    <InkSphere args={[0.265, 24, 18]} color={PALETTE.skinWhite} outline={0.028} frame={frame} seed={130} />
+                    <CartoonFace mood={mood} frame={frame} zOffset={0.255} />
+
+                    {/* Flying panic sweat droplets */}
+                    {sweating &&
+                      [0, 1, 2, 3, 4, 5].map((i) => {
+                        const phase = ((frame * 0.08 + i * 0.21) % 1);
+                        const angle = (i / 6) * Math.PI * 2 + 0.3;
+                        const dist = 0.28 + phase * 0.32;
+                        return (
+                          <InkSphere
+                            key={i}
+                            args={[0.028 * (1 - phase * 0.5), 10, 8]}
+                            position={[Math.cos(angle) * dist, Math.sin(angle) * dist + 0.06 - phase * 0.14, 0.12]}
+                            color={PALETTE.sweatBlue}
+                            outline={0.012}
+                            frame={frame}
+                            seed={140 + i}
+                          />
+                        );
+                      })}
+                  </group>
+
+                  {/* Anime Tear/Sweat Waterfall Geyser during Overhead Press */}
+                  {waterfall && (
+                    <group position={[0, 0.85, 0.18]}>
+                      <InkCylinder
+                        args={[0.08, 0.12, 3.4, 12]}
+                        position={[0, 0.35, 0]}
+                        color={PALETTE.sweatBlue}
+                        outline={0.018}
+                        frame={frame}
+                        seed={150}
+                      />
+                      {/* Puddle splash at feet */}
+                      <InkCylinder
+                        args={[0.55 + Math.sin(frame * 0.9) * 0.08, 0.55, 0.04, 18]}
+                        position={[0, -1.78, 0]}
+                        color={PALETTE.sweatBlue}
+                        outline={0.018}
+                        frame={frame}
+                        seed={151}
+                      />
+                    </group>
+                  )}
+                </group>
+              </group>
+            );
+          };
+
+          // ------------------------------------------------------------------
+          // CHARACTER 2: LAT PULLDOWN GYM GIRL (Sharp stylized hair + neck towel)
+          // ------------------------------------------------------------------
+          export const GymGirl: React.FC<{
+            position?: [number, number, number];
+            rotation?: [number, number, number];
+            frame: number;
+            mode: "pulldown" | "glare" | "judge" | "pointlaugh";
+            pulldownProgress?: number;
+          }> = ({ position = [0, 0, 0], rotation = [0, 0, 0], frame, mode, pulldownProgress = 0 }) => {
+            const isSeated = mode === "pulldown" || mode === "glare";
+            const headYaw = mode === "glare" ? 1.1 : mode === "pulldown" ? 0.1 : 0;
+            const mood: FaceProps["mood"] =
+              mode === "glare" ? "angry" : mode === "judge" ? "sideeye" : mode === "pointlaugh" ? "laugh" : "calm";
+
+            const armLift = mode === "pulldown" ? 2.55 - pulldownProgress * 0.95 : mode === "pointlaugh" ? 1.45 : 0.25;
+
+            return (
+              <group position={position} rotation={rotation}>
+                {/* Legs */}
+                {[-0.14, 0.14].map((x, idx) => (
+                  <group key={idx} position={[x, isSeated ? 0.72 : 0.92, 0]} rotation={[isSeated ? -1.45 : 0, 0, 0]}>
+                    <InkCapsule args={[0.078, 0.38, 8, 12]} position={[0, -0.22, 0]} color={PALETTE.girlLeggings} outline={0.022} frame={frame} seed={200 + idx} />
+                    <group position={[0, -0.44, 0]} rotation={[isSeated ? 1.45 : 0, 0, 0]}>
+                      <InkCapsule args={[0.06, 0.38, 8, 12]} position={[0, -0.22, 0]} color={PALETTE.girlLeggings} outline={0.022} frame={frame} seed={205 + idx} />
+                      <InkBox args={[0.13, 0.09, 0.24]} position={[0, -0.44, 0.05]} color={PALETTE.shirtWhite} outline={0.02} frame={frame} seed={210 + idx} />
+                    </group>
+                  </group>
+                ))}
+
+                {/* Torso */}
+                <group position={[0, isSeated ? 0.76 : 0.96, 0]}>
+                  <InkCapsule args={[0.155, 0.34, 8, 14]} position={[0, 0.28, 0]} color={PALETTE.girlTop} outline={0.024} frame={frame} seed={220} />
+                  {/* Gym towel draped around neck */}
+                  <InkBox args={[0.09, 0.36, 0.08]} position={[-0.1, 0.34, 0.14]} color={PALETTE.shirtWhite} outline={0.018} frame={frame} seed={221} />
+                  <InkBox args={[0.09, 0.32, 0.08]} position={[0.1, 0.36, 0.14]} color={PALETTE.shirtWhite} outline={0.018} frame={frame} seed={222} />
+
+                  {/* Arms */}
+                  <group position={[-0.21, 0.44, 0]} rotation={[mode === "pulldown" ? -0.3 : 0, 0, armLift]}>
+                    <InkCapsule args={[0.048, 0.46, 6, 10]} position={[0, -0.26, 0]} color={PALETTE.skinWhite} outline={0.02} frame={frame} seed={223} />
+                  </group>
+                  <group
+                    position={[0.21, 0.44, 0]}
+                    rotation={
+                      mode === "pointlaugh"
+                        ? [-1.35 + Math.sin(frame * 1.4) * 0.14, 0.15, -0.2]
+                        : [mode === "pulldown" ? -0.3 : 0, 0, -armLift]
+                    }
+                  >
+                    <InkCapsule args={[0.048, 0.48, 6, 10]} position={[0, -0.26, 0]} color={PALETTE.skinWhite} outline={0.02} frame={frame} seed={224} />
+                    {mode === "pointlaugh" && (
+                      <InkCapsule args={[0.032, 0.22, 6, 10]} position={[0, -0.62, 0]} color={PALETTE.skinWhite} outline={0.018} frame={frame} seed={225} />
+                    )}
+                  </group>
+
+                  {/* Head + Iconic Sharp Angular Hair Silhouette */}
+                  <group position={[0, 0.74, 0]} rotation={[0, headYaw, mode === "pointlaugh" ? Math.sin(frame * 1.3) * 0.12 : 0]}>
+                    <InkSphere args={[0.23, 22, 16]} color={PALETTE.skinWhite} outline={0.026} frame={frame} seed={230} />
+                    {/* Sharp sleek back hair prism */}
+                    <InkBox args={[0.38, 0.54, 0.14]} position={[0, -0.05, -0.17]} rotation={[0.18, 0, 0]} color={PALETTE.shirtWhite} outline={0.026} frame={frame} seed={231} />
+                    <InkBox args={[0.42, 0.16, 0.24]} position={[0, 0.19, -0.03]} rotation={[-0.12, 0, 0]} color={PALETTE.shirtWhite} outline={0.024} frame={frame} seed={232} />
+                    <CartoonFace mood={mood} frame={frame} zOffset={0.225} eyeScale={0.95} />
+                  </group>
+                </group>
+              </group>
+            );
+          };
+
+          // ------------------------------------------------------------------
+          // CHARACTER 3: BUFF GYM BRO (Huge V-taper torso, charcoal tank)
+          // ------------------------------------------------------------------
+          export const BuffBro: React.FC<{
+            position?: [number, number, number];
+            rotation?: [number, number, number];
+            frame: number;
+            mode: "squat" | "glare" | "spot" | "crushedunder";
+            squatDepth?: number;
+          }> = ({ position = [0, 0, 0], rotation = [0, 0, 0], frame, mode, squatDepth = 0 }) => {
+            const hipY = mode === "crushedunder" ? 0.62 : 0.96 - squatDepth * 0.34;
+            const mood: FaceProps["mood"] =
+              mode === "glare" ? "sideeye" : mode === "spot" ? "smug" : mode === "crushedunder" ? "angry" : "calm";
+
+            return (
+              <group position={position} rotation={rotation}>
+                {/* Muscular Legs */}
+                {[-0.22, 0.22].map((x, idx) => {
+                  const sgn = idx === 0 ? -1 : 1;
+                  const bend = mode === "crushedunder" ? -1.15 : -squatDepth * 0.95;
+                  return (
+                    <group key={idx} position={[x, hipY, 0]} rotation={[bend, 0, sgn * squatDepth * 0.25]}>
+                      <InkCapsule args={[0.125, 0.34, 8, 14]} position={[0, -0.2, 0]} color={PALETTE.broShorts} outline={0.025} frame={frame} seed={300 + idx} />
+                      <group position={[0, -0.4, 0]} rotation={[-bend * 0.95, 0, 0]}>
+                        <InkCapsule args={[0.095, 0.36, 8, 12]} position={[0, -0.21, 0]} color={PALETTE.skinWhite} outline={0.024} frame={frame} seed={305 + idx} />
+                        <InkBox args={[0.18, 0.11, 0.29]} position={[0, -0.44, 0.06]} color={PALETTE.shirtWhite} outline={0.024} frame={frame} seed={310 + idx} />
+                      </group>
+                    </group>
+                  );
+                })}
+
+                {/* Broad V-Taper Torso */}
+                <group position={[0, hipY + 0.05, 0]} rotation={[squatDepth * 0.24, 0, 0]}>
+                  <InkCylinder args={[0.34, 0.21, 0.68, 16]} position={[0, 0.36, 0]} color={PALETTE.broTank} outline={0.03} frame={frame} seed={320} />
+
+                  {/* Huge Deltoids & Biceps */}
+                  {[-1, 1].map((sgn, idx) => {
+                    const armRot: [number, number, number] =
+                      mode === "squat" || mode === "glare"
+                        ? [-0.35, 0, sgn * -1.45]
+                        : mode === "crushedunder"
+                        ? [-1.2, 0, sgn * -0.95]
+                        : [-0.25, 0, sgn * -0.25];
+                    return (
+                      <group key={idx} position={[sgn * 0.42, 0.58, 0]} rotation={armRot}>
+                        <InkSphere args={[0.145, 16, 12]} color={PALETTE.skinWhite} outline={0.026} frame={frame} seed={325 + idx} />
+                        <InkCapsule args={[0.11, 0.44, 8, 12]} position={[0, -0.28, 0]} color={PALETTE.skinWhite} outline={0.026} frame={frame} seed={328 + idx} />
+                        <InkSphere args={[0.09, 12, 10]} position={[0, -0.56, 0]} color={PALETTE.skinWhite} outline={0.024} frame={frame} seed={330 + idx} />
+                      </group>
+                    );
+                  })}
+
+                  {/* Head */}
+                  <group position={[0, 0.88, 0.04]} rotation={[0, mode === "glare" ? -0.95 : 0, 0]}>
+                    <InkSphere args={[0.23, 22, 16]} color={PALETTE.skinWhite} outline={0.028} frame={frame} seed={340} />
+                    <CartoonFace mood={mood} frame={frame} zOffset={0.225} />
+                  </group>
+                </group>
+              </group>
+            );
+          };
+
+          // ------------------------------------------------------------------
+          // CHARACTER 4: FRIENDLY HELPER GIRL (Ending Punchline "NEED HELP?")
+          // ------------------------------------------------------------------
+          export const HelperGirl: React.FC<{
+            position?: [number, number, number];
+            frame: number;
+            surprised?: boolean;
+          }> = ({ position = [0, 0, 0], frame, surprised = false }) => {
+            return (
+              <group position={position}>
+                {/* Legs */}
+                {[-0.12, 0.12].map((x, idx) => (
+                  <group key={idx} position={[x, 0.88, 0]}>
+                    <InkCapsule args={[0.055, 0.68, 8, 12]} position={[0, -0.38, 0]} color={PALETTE.skinWhite} outline={0.02} frame={frame} seed={400 + idx} />
+                    <InkBox args={[0.12, 0.08, 0.2]} position={[0, -0.78, 0.04]} color={PALETTE.shirtWhite} outline={0.018} frame={frame} seed={405 + idx} />
+                  </group>
+                ))}
+                {/* Shorts & Crop Top */}
+                <group position={[0, 0.9, 0]}>
+                  <InkBox args={[0.32, 0.2, 0.22]} position={[0, 0.02, 0]} color={PALETTE.shirtWhite} outline={0.022} frame={frame} seed={410} />
+                  <InkCapsule args={[0.14, 0.28, 8, 14]} position={[0, 0.34, 0]} color={PALETTE.girlTop} outline={0.022} frame={frame} seed={411} />
+                  {/* Polite shy hands together */}
+                  <group position={[-0.18, 0.44, 0.08]} rotation={[-0.75, 0.35, -0.5]}>
+                    <InkCapsule args={[0.04, 0.36, 6, 10]} position={[0, -0.2, 0]} color={PALETTE.skinWhite} outline={0.018} frame={frame} seed={412} />
+                  </group>
+                  <group position={[0.18, 0.44, 0.08]} rotation={[-0.75, -0.35, 0.5]}>
+                    <InkCapsule args={[0.04, 0.36, 6, 10]} position={[0, -0.2, 0]} color={PALETTE.skinWhite} outline={0.018} frame={frame} seed={413} />
+                  </group>
+                  {/* Bob Hair + Cute Face */}
+                  <group position={[0, 0.72, 0]} rotation={[0, 0, surprised ? 0.14 : 0]}>
+                    <InkSphere args={[0.21, 20, 16]} color={PALETTE.skinWhite} outline={0.024} frame={frame} seed={420} />
+                    <InkSphere args={[0.23, 20, 14]} position={[0, 0.04, -0.05]} scale={[1.05, 1.0, 0.95]} color={PALETTE.shirtWhite} outline={0.024} frame={frame} seed={421} />
+                    <CartoonFace mood={surprised ? "pinprick" : "calm"} frame={frame} zOffset={0.21} eyeScale={0.85} />
+                  </group>
+                </group>
+              </group>
+            );
+          };
+
+          // ------------------------------------------------------------------
+          // FEVER-DREAM FLOATING LAUGHING FACES (Shot 8 Meltdown)
+          // ------------------------------------------------------------------
+          export const FloatingMockingFaces: React.FC<{ frame: number; intensity: number }> = ({ frame, intensity }) => {
+            if (intensity <= 0.01) return null;
+            const configs = [
+              { x: -0.78, y: 1.95, z: 0.7, speed: 1.4, phase: 0.0, s: 1.15 },
+              { x: 0.82, y: 2.05, z: 0.65, speed: 1.7, phase: 1.8, s: 1.05 },
+              { x: -0.95, y: 1.15, z: 0.9, speed: 1.2, phase: 3.1, s: 0.95 },
+              { x: 0.95, y: 1.25, z: 0.85, speed: 1.9, phase: 4.5, s: 1.2 },
+            ];
+            return (
+              <group>
+                {configs.map((c, i) => {
+                  const wobbleX = Math.sin(frame * 0.35 * c.speed + c.phase) * 0.22;
+                  const wobbleY = Math.cos(frame * 0.42 * c.speed + c.phase) * 0.18;
+                  const pulse = c.s * intensity * (0.9 + 0.22 * Math.sin(frame * 0.6 + i));
+                  return (
+                    <group
+                      key={i}
+                      position={[c.x + wobbleX, c.y + wobbleY, c.z]}
+                      rotation={[0, 0, Math.sin(frame * 0.25 + i) * 0.35]}
+                      scale={[pulse, pulse * (1 + Math.sin(frame * 0.5 + i) * 0.22), 1]}
+                    >
+                      <CartoonFace mood="laugh" frame={frame} zOffset={0} eyeScale={1.35} />
+                    </group>
+                  );
+                })}
+              </group>
+            );
+          };
+          EOF
+
+          # --------------------------------------------------------------------
+          # 9. Master 10-Shot Director & Camera Rig (src/scene/OverthinkerScene.tsx)
+          # --------------------------------------------------------------------
+          cat << 'EOF' > gym-anim/src/scene/OverthinkerScene.tsx
+          import React, { useLayoutEffect } from "react";
+          import { useThree } from "@react-three/fiber";
+          import * as THREE from "three";
+          import { GymEnvironment, Barbell } from "./GymEnvironment";
+          import { Overthinker, GymGirl, BuffBro, HelperGirl, FloatingMockingFaces } from "./Characters";
+          import { PALETTE, cameraShake, easeOutBack, lerp, segProgress, smoothStep } from "../utils/animation";
+
+          interface SceneProps {
+            frame: number;
+            fps: number;
+          }
+
+          interface CameraState {
+            pos: [number, number, number];
+            target: [number, number, number];
+            fov: number;
+            roll: number;
+            shake: number;
+          }
+
+          const CameraRig: React.FC<{ state: CameraState; frame: number }> = ({ state, frame }) => {
+            const { camera } = useThree();
+            useLayoutEffect(() => {
+              const [sx, sy, sr] = cameraShake(frame, state.shake);
+              camera.position.set(state.pos[0] + sx, state.pos[1] + sy, state.pos[2]);
+              camera.lookAt(state.target[0], state.target[1], state.target[2]);
+              camera.rotation.z += state.roll + sr;
+              if (camera instanceof THREE.PerspectiveCamera) {
+                camera.fov = state.fov;
+                camera.updateProjectionMatrix();
+              }
+            }, [camera, state, frame]);
+            return null;
+          };
+
+          export const OverthinkerScene: React.FC<SceneProps> = ({ frame }) => {
+            // =================================================================
+            // 10-SHOT COMEDY TIMELINE (960 frames @ 30fps = 32.0s)
+            // =================================================================
+            // Shot 1 (0-72):    Peaceful Lat Pulldown Girl -> sudden glare snap
+            // Shot 2 (72-155):  Overthinker trembling panic -> angry Girl snap
+            // Shot 3 (155-235): Buff Bro heavy squats -> judgmental side-eye
+            // Shot 4 (235-320): Overthinker face melt -> shy finger poke
+            // Shot 5 (320-430): Imagined peer pressure -> giant barbell crushes squat
+            // Shot 6 (430-540): Buff Bro spots smugly -> overhead press tear waterfall!
+            // Shot 7 (540-610): Barbell crash onto Buff Bro lap -> Girl laughs & points
+            // Shot 8 (610-720): Trippy fever-dream meltdown with floating laughing faces
+            // Shot 9 (720-850): Reality snap! Everyone minding own business -> EMPTY BAR reveal
+            // Shot 10 (850-960): Friendly Helper Girl "NEED HELP?" -> Overthinker rockets out!
+
+            const pulldownRep = 0.5 - 0.5 * Math.cos(frame * 0.14);
+            const broSquatRep = 0.5 - 0.5 * Math.cos(frame * 0.11);
+
+            // Default peaceful gym positions
+            let cam: CameraState = { pos: [0, 1.45, 4.4], target: [0, 1.35, 0], fov: 38, roll: 0, shake: 0 };
+
+            let girlMode: "pulldown" | "glare" | "judge" | "pointlaugh" = "pulldown";
+            let girlPos: [number, number, number] = [-3.55, 0, 0.25];
+            let girlRot: [number, number, number] = [0, 1.45, 0];
+            let pulldownVal = pulldownRep;
+
+            let broMode: "squat" | "glare" | "spot" | "crushedunder" = "squat";
+            let broPos: [number, number, number] = [3.6, 0, 0.35];
+            let broRot: [number, number, number] = [0, -0.35, 0];
+            let broSquatVal = broSquatRep;
+
+            let heroPos: [number, number, number] = [0, 0, 0.1];
+            let heroRot: [number, number, number] = [0, 0, 0];
+            let heroPose: React.ComponentProps<typeof Overthinker>["pose"] = "hunch";
+            let heroMood: React.ComponentProps<typeof Overthinker>["mood"] = "panic";
+            let heroSweat = false;
+            let heroWaterfall = false;
+            let heroTremble = 0;
+            let heroMelt = 0;
+
+            let heroBarPos: [number, number, number] = [0, 1.48, 0.05];
+            let heroBarRot: [number, number, number] = [0, 0, 0];
+            let heroPlateScale = 0; // Reality: empty bar!
+            let heroBarBend = 0;
+
+            let feverIntensity = 0;
+            let showHelper = false;
+            let helperPos: [number, number, number] = [1.35, 0, 0.25];
+            let helperSurprised = false;
+            let heroVisible = true;
+
+            // --- SHOT 1 (0 - 72): Lat Pulldown Girl peaceful -> glare ---
+            if (frame < 72) {
+              const glareT = segProgress(frame, 58, 66);
+              if (frame < 58) {
+                girlMode = "pulldown";
+                cam = { pos: [-3.1, 1.45, 3.35], target: [-3.35, 1.32, 0.25], fov: 40, roll: 0, shake: 0 };
+              } else {
+                girlMode = "glare";
+                pulldownVal = 0;
+                cam = {
+                  pos: [lerp(-3.1, -3.35, glareT), lerp(1.45, 1.5, glareT), lerp(3.35, 2.05, easeOutBack(glareT))],
+                  target: [-3.55, 1.45, 0.25],
+                  fov: 34,
+                  roll: 0,
+                  shake: frame >= 64 ? 0.04 : 0,
+                };
+              }
+            }
+            // --- SHOT 2 (72 - 155): Overthinker Panic + Angry Girl cut ---
+            else if (frame < 155) {
+              heroPose = "hunch";
+              heroMood = "panic";
+              heroSweat = true;
+              heroTremble = 0.025;
+              if (frame < 130) {
+                const zoom = segProgress(frame, 72, 130);
+                cam = {
+                  pos: [0, 1.38, lerp(3.4, 2.75, zoom)],
+                  target: [0, 1.32, 0.1],
+                  fov: 38,
+                  roll: 0,
+                  shake: 0.032,
+                };
+              } else {
+                // Quick snap to exaggerated angry Girl
+                girlMode = "glare";
+                pulldownVal = 0;
+                cam = { pos: [-3.4, 1.52, 1.8], target: [-3.55, 1.48, 0.25], fov: 32, roll: -0.05, shake: 0.06 };
+              }
+            }
+            // --- SHOT 3 (155 - 235): Buff Bro Squats -> Judgment Side-Eye ---
+            else if (frame < 235) {
+              if (frame < 205) {
+                broMode = "squat";
+                cam = { pos: [3.4, 1.35, 3.6], target: [3.6, 1.25, 0.35], fov: 40, roll: 0, shake: 0 };
+              } else {
+                broMode = "glare";
+                broSquatVal = 0.92;
+                const snap = segProgress(frame, 205, 214);
+                cam = {
+                  pos: [3.45, 1.22, lerp(3.4, 2.2, easeOutBack(snap))],
+                  target: [3.6, 1.25, 0.35],
+                  fov: 35,
+                  roll: 0.04,
+                  shake: 0.045,
+                };
+              }
+            }
+            // --- SHOT 4 (235 - 320): Overthinker Melt -> Shy 👉👈 Panic ---
+            else if (frame < 320) {
+              heroSweat = true;
+              if (frame < 270) {
+                heroPose = "hunch";
+                heroMood = "melt";
+                heroMelt = smoothStep(segProgress(frame, 238, 265));
+                heroTremble = 0.018;
+                cam = { pos: [0, 1.52, 2.55], target: [0, 1.48, 0.1], fov: 36, roll: 0, shake: 0.02 };
+              } else {
+                heroPose = "shy";
+                heroMood = "shy";
+                heroTremble = 0.028;
+                cam = { pos: [0, 1.38, 2.95], target: [0, 1.32, 0.1], fov: 38, roll: 0, shake: 0.03 };
+              }
+            }
+            // --- SHOT 5 (320 - 430): Imagined Peer Pressure + Giant Barbell ---
+            else if (frame < 430) {
+              heroSweat = true;
+              if (frame < 375) {
+                // Girl & Buff Bro loom in foreground judging him
+                girlMode = "judge";
+                girlPos = [-0.82, -0.05, 1.38];
+                girlRot = [0, 2.55, 0];
+                broMode = "glare";
+                broPos = [0.85, -0.05, 1.42];
+                broRot = [0, -2.55, 0];
+                heroPose = "grabbar";
+                heroMood = frame < 350 ? "fakegrin" : "angry";
+                heroBarPos = [0, 1.56, 0.08];
+                cam = { pos: [0, 1.48, 3.05], target: [0, 1.42, 0.2], fov: 42, roll: 0, shake: 0.015 };
+              } else {
+                // MASSIVE imaginary barbell plates slam onto bar!
+                const drop = easeOutBack(segProgress(frame, 375, 392));
+                heroPose = "squatstrain";
+                heroMood = "panic";
+                heroTremble = 0.045;
+                heroPlateScale = 2.15 * drop;
+                heroBarPos = [0, 1.24, 0.08];
+                heroBarBend = 0.14;
+                cam = { pos: [0, 1.32, 4.15], target: [0, 1.22, 0.08], fov: 42, roll: 0, shake: 0.05 };
+              }
+            }
+            // --- SHOT 6 (430 - 540): Buff Bro Spots Smugly -> Tear Waterfall Overhead Press ---
+            else if (frame < 540) {
+              heroSweat = true;
+              broMode = "spot";
+              broPos = [0.05, 0, -0.45];
+              broRot = [0, 0, 0];
+              heroPlateScale = 2.15;
+              if (frame < 475) {
+                heroPose = "squatstrain";
+                heroMood = "panic";
+                heroTremble = 0.055;
+                heroBarPos = [0, 1.22, 0.1];
+                heroBarBend = 0.16;
+                cam = {
+                  pos: [0.15, 1.38, lerp(4.1, 3.25, segProgress(frame, 430, 470))],
+                  target: [0, 1.32, 0],
+                  fov: 40,
+                  roll: 0,
+                  shake: 0.04,
+                };
+              } else {
+                // PANIC OVERHEAD PRESS + ANIME WATERFALL!
+                const liftT = easeOutBack(segProgress(frame, 475, 495));
+                heroPose = "overheadpress";
+                heroMood = "scream";
+                heroWaterfall = true;
+                heroTremble = 0.065;
+                heroBarPos = [0, lerp(1.25, 2.38, liftT), 0.1];
+                heroBarBend = 0.18;
+                cam = { pos: [0, 1.52, 4.2], target: [0, 1.48, 0.05], fov: 44, roll: 0, shake: 0.075 };
+              }
+            }
+            // --- SHOT 7 (540 - 615): Barbell Crash onto Buff Bro Lap + Girl Points & Laughs ---
+            else if (frame < 615) {
+              if (frame < 588) {
+                broMode = "crushedunder";
+                broPos = [0, 0, -0.15];
+                broRot = [0, 0.18, 0];
+                heroPose = "crushed";
+                heroPos = [0.05, 0.05, 0.25];
+                heroMood = "scream";
+                heroTremble = 0.04;
+                heroPlateScale = 2.15;
+                heroBarPos = [0, 1.28 + Math.sin(frame * 0.9) * 0.04, 0.35];
+                heroBarRot = [0, 0, 0.12];
+                cam = { pos: [0.6, 1.45, 3.55], target: [0, 1.15, 0.15], fov: 42, roll: -0.12, shake: 0.06 };
+              } else {
+                // Close-up of Gym Girl laughing maniacally and pointing into lens
+                girlMode = "pointlaugh";
+                girlPos = [-0.25, 0, 0.2];
+                girlRot = [0, 0.1, 0];
+                cam = { pos: [-0.2, 1.48, 2.05], target: [-0.22, 1.42, 0.2], fov: 38, roll: 0.08, shake: 0.05 };
+              }
+            }
+            // --- SHOT 8 (615 - 720): Trippy Fever-Dream Meltdown ---
+            else if (frame < 720) {
+              const t = segProgress(frame, 615, 720);
+              feverIntensity = Math.min(1, t * 2.5);
+              broMode = "crushedunder";
+              broPos = [0, 0, -0.15];
+              heroPose = "crushed";
+              heroPos = [0.05, 0.05, 0.25];
+              heroMood = "panic";
+              heroMelt = 0.45 * Math.sin(frame * 0.45);
+              heroTremble = 0.07;
+              heroPlateScale = 2.15;
+              heroBarPos = [0, 1.25, 0.35];
+              heroBarRot = [0, 0, Math.sin(frame * 0.35) * 0.22];
+              cam = {
+                pos: [Math.sin(frame * 0.22) * 0.55, 1.42 + Math.cos(frame * 0.28) * 0.22, 3.2 - t * 0.55],
+                target: [0, 1.32, 0.2],
+                fov: 46 + Math.sin(frame * 0.5) * 5,
+                roll: Math.sin(frame * 0.25) * 0.28,
+                shake: 0.085,
+              };
+            }
+            // --- SHOT 9 (720 - 850): Reality Snap! Nobody Watching -> EMPTY BARBELL Reveal ---
+            else if (frame < 850) {
+              heroPose = "realityempty";
+              heroBarPos = [0, 1.54, 0.05];
+              heroPlateScale = 0; // ZERO WEIGHTS!
+              if (frame < 746) {
+                // Overthinker eyes squeezed shut, then snaps open
+                heroMood = frame < 735 ? "blink" : "pinprick";
+                cam = { pos: [0, 1.65, 1.9], target: [0, 1.65, 0.1], fov: 34, roll: 0, shake: 0 };
+              } else if (frame < 778) {
+                // Reality check: Buff Bro peacefully squatting, completely ignoring him
+                broMode = "squat";
+                cam = { pos: [3.2, 1.42, 3.7], target: [3.6, 1.28, 0.35], fov: 40, roll: 0, shake: 0 };
+              } else if (frame < 808) {
+                // Reality check: Lat Pulldown Girl peacefully exercising
+                girlMode = "pulldown";
+                cam = { pos: [-3.1, 1.45, 3.45], target: [-3.35, 1.32, 0.25], fov: 40, roll: 0, shake: 0 };
+              } else {
+                // Dramatic zoom-out revealing empty barbell!
+                const zoomOut = smoothStep(segProgress(frame, 808, 845));
+                heroMood = "pinprick";
+                cam = {
+                  pos: [0, lerp(1.62, 1.42, zoomOut), lerp(2.0, 4.35, zoomOut)],
+                  target: [0, lerp(1.62, 1.36, zoomOut), 0.1],
+                  fov: 38,
+                  roll: 0,
+                  shake: frame >= 810 && frame <= 822 ? 0.04 : 0,
+                };
+              }
+            }
+            // --- SHOT 10 (850 - 960): Friendly Girl "NEED HELP?" -> Rocket Zip Exit! ---
+            else {
+              showHelper = true;
+              const walkIn = smoothStep(segProgress(frame, 850, 878));
+              helperPos = [lerp(2.2, 1.05, walkIn), 0, 0.22];
+              heroPose = "realityempty";
+              heroBarPos = [0, 1.54, 0.05];
+              heroPlateScale = 0;
+              heroMood = "pinprick";
+
+              // At frame 900 (30.0s), Overthinker instantly rockets straight downward out of existence!
+              if (frame >= 900) {
+                const zipT = segProgress(frame, 900, 907);
+                heroPos = [0, lerp(0, -5.5, zipT), 0.1];
+                if (frame > 907) heroVisible = false;
+                helperSurprised = true;
+              }
+              cam = {
+                pos: [0.28, 1.42, 4.35],
+                target: [0.28, 1.36, 0.12],
+                fov: 38,
+                roll: 0,
+                shake: frame >= 900 && frame <= 914 ? 0.07 : 0,
+              };
+            }
+
+            return (
+              <>
+                <color attach="background" args={[PALETTE.bgPaper]} />
+                <ambientLight intensity={1.15} />
+                <directionalLight position={[4, 8, 6]} intensity={0.85} />
+
+                <CameraRig state={cam} frame={frame} />
+
+                {/* Gym Background & Equipment */}
+                <GymEnvironment frame={frame} pulldownProgress={pulldownVal} />
+
+                {/* Buff Bro's permanent heavy barbell (visible when he squats at his rack) */}
+                {(broMode === "squat" || broMode === "glare") && (
+                  <Barbell
+                    position={[broPos[0], 1.58 - broSquatVal * 0.34, broPos[2] - 0.08]}
+                    rotation={[0, broRot[1], 0]}
+                    plateScale={1.08}
+                    frame={frame}
+                  />
+                )}
+
+                {/* Overthinker's Barbell (empty in reality, gigantic in imagination) */}
+                <Barbell
+                  position={heroBarPos}
+                  rotation={heroBarRot}
+                  plateScale={heroPlateScale}
+                  bend={heroBarBend}
+                  frame={frame}
+                />
+
+                {/* Characters */}
+                {heroVisible && (
+                  <Overthinker
+                    position={heroPos}
+                    rotation={heroRot}
+                    frame={frame}
+                    pose={heroPose}
+                    mood={heroMood}
+                    sweating={heroSweat}
+                    waterfall={heroWaterfall}
+                    tremble={heroTremble}
+                    meltFactor={heroMelt}
+                  />
+                )}
+
+                <GymGirl
+                  position={girlPos}
+                  rotation={girlRot}
+                  frame={frame}
+                  mode={girlMode}
+                  pulldownProgress={pulldownVal}
+                />
+
+                <BuffBro
+                  position={broPos}
+                  rotation={broRot}
+                  frame={frame}
+                  mode={broMode}
+                  squatDepth={broSquatVal}
+                />
+
+                {showHelper && <HelperGirl position={helperPos} frame={frame} surprised={helperSurprised} />}
+
+                {/* Fever-dream orbiting laughing faces */}
+                <FloatingMockingFaces frame={frame} intensity={feverIntensity} />
+              </>
+            );
+          };
+          EOF
+
+          # --------------------------------------------------------------------
+          # 10. 2D Hand-Drawn Comic Overlay (src/components/ComicOverlay.tsx)
+          #     "NEED HELP?" lettering, impact flashes, speed lines, sepia grain
+          # --------------------------------------------------------------------
+          cat << 'EOF' > gym-anim/src/components/ComicOverlay.tsx
+          import React from "react";
+          import { AbsoluteFill } from "remotion";
+          import { PALETTE, boilJitter, segProgress } from "../utils/animation";
+
+          export const ComicOverlay: React.FC<{ frame: number }> = ({ frame }) => {
+            // Brief comic negative-flash impact frames on big Vine Booms
+            const boomFrames = [67, 142, 207, 376, 541, 591, 810, 901];
+            const isImpactFlash = boomFrames.some((bf) => frame === bf || frame === bf + 1);
+
+            // Fever-dream wave wobble CSS filter during Shot 8
+            const isFever = frame >= 615 && frame < 720;
+            const feverHue = isFever ? Math.sin(frame * 0.45) * 18 : 0;
+
+            // "NEED HELP?" floating comic lettering (Shot 10: frames 865-960)
+            const showNeedHelp = frame >= 865;
+            const needHelpPop = Math.min(1, segProgress(frame, 865, 874) * 1.15);
+            const jx = boilJitter(frame, 99, 3.2);
+            const jy = boilJitter(frame, 107, 3.2);
+
+            // Rocket zip-out red/black vertical comic speed lines (frames 900-932)
+            const showSpeedLines = frame >= 900 && frame <= 936;
+            const speedFade = showSpeedLines ? Math.max(0, 1 - segProgress(frame, 912, 936)) : 0;
+
+            // Anime panic radial action lines during extreme panic & overhead press
+            const showActionLines =
+              (frame >= 72 && frame <= 155) ||
+              (frame >= 475 && frame <= 540) ||
+              (frame >= 615 && frame <= 720);
+
+            return (
+              <AbsoluteFill style={{ pointerEvents: "none" }}>
+                {/* Radial Manga Panic Action Lines */}
+                {showActionLines && (
+                  <svg viewBox="0 0 1080 1920" style={{ width: "100%", height: "100%", opacity: 0.24 }}>
+                    {Array.from({ length: 28 }).map((_, i) => {
+                      const angle = (i / 28) * Math.PI * 2 + (frame % 3) * 0.04;
+                      const x1 = 540 + Math.cos(angle) * 430;
+                      const y1 = 960 + Math.sin(angle) * 650;
+                      const x2 = 540 + Math.cos(angle) * 1150;
+                      const y2 = 960 + Math.sin(angle) * 1450;
+                      return (
+                        <line
+                          key={i}
+                          x1={x1}
+                          y1={y1}
+                          x2={x2}
+                          y2={y2}
+                          stroke={PALETTE.ink}
+                          strokeWidth={i % 3 === 0 ? 7 : 3}
+                        />
+                      );
+                    })}
+                  </svg>
+                )}
+
+                {/* Vertical Rocket-Drop Speed Lines + Dust Puff (Punchline!) */}
+                {showSpeedLines && (
+                  <svg
+                    viewBox="0 0 1080 1920"
+                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: speedFade }}
+                  >
+                    <line x1="415" y1="620" x2="415" y2="1480" stroke={PALETTE.speedRed} strokeWidth="10" strokeLinecap="round" />
+                    <line x1="452" y1="740" x2="452" y2="1520" stroke={PALETTE.ink} strokeWidth="6" strokeLinecap="round" />
+                    <line x1="505" y1="690" x2="505" y2="1490" stroke={PALETTE.speedRed} strokeWidth="8" strokeLinecap="round" />
+                    <ellipse
+                      cx="460"
+                      cy="1480"
+                      rx={80 + (frame - 900) * 6}
+                      ry={28 + (frame - 900) * 2}
+                      fill="#FBFBF8"
+                      stroke={PALETTE.ink}
+                      strokeWidth="6"
+                      opacity={Math.max(0, 1 - (frame - 900) / 18)}
+                    />
+                  </svg>
+                )}
+
+                {/* Hand-lettered "NEED HELP?" Comic Text */}
+                {showNeedHelp && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      right: 110,
+                      top: 675,
+                      transform: `translate(${jx}px, ${jy}px) scale(${needHelpPop}) rotate(-4deg)`,
+                      fontFamily: "'DejaVu Sans', 'Comic Sans MS', sans-serif",
+                      fontWeight: 900,
+                      fontSize: 64,
+                      lineHeight: 1.05,
+                      color: PALETTE.ink,
+                      textAlign: "center",
+                      letterSpacing: "3px",
+                      textShadow: "3px 3px 0px #FBFBF8",
+                    }}
+                  >
+                    NEED
+                    <br />
+                    HELP?
+                  </div>
+                )}
+
+                {/* Subtle Warm Paper Vignette & Fever Tint */}
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background:
+                      "radial-gradient(circle at 50% 48%, rgba(0,0,0,0) 62%, rgba(72,56,28,0.22) 100%)",
+                    filter: isFever ? `hue-rotate(${feverHue}deg)` : undefined,
+                  }}
+                />
+
+                {/* Impact Frame Flash */}
+                {isImpactFlash && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      backgroundColor: "rgba(255, 255, 255, 0.42)",
+                      mixBlendMode: "difference",
+                    }}
+                  />
+                )}
+              </AbsoluteFill>
+            );
+          };
+          EOF
+
+          # --------------------------------------------------------------------
+          # 11. Main Remotion Video Composition (src/Video.tsx)
+          # --------------------------------------------------------------------
+          cat << 'EOF' > gym-anim/src/Video.tsx
+          import React from "react";
+          import { AbsoluteFill, Audio, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+          import { ThreeCanvas } from "@remotion/three";
+          import { OverthinkerScene } from "./scene/OverthinkerScene";
+          import { ComicOverlay } from "./components/ComicOverlay";
+          import { PALETTE } from "./utils/animation";
+
+          export interface VideoProps {
+            includeAudio?: boolean;
+          }
+
+          export const OverthinkerVideo: React.FC<VideoProps> = ({ includeAudio = true }) => {
+            const frame = useCurrentFrame();
+            const { width, height, fps } = useVideoConfig();
+
+            return (
+              <AbsoluteFill style={{ backgroundColor: PALETTE.bgPaper }}>
+                {includeAudio && <Audio src={staticFile("soundtrack.wav")} volume={1.0} />}
+                <ThreeCanvas
+                  width={width}
+                  height={height}
+                  shadows={false}
+                  dpr={1}
+                  camera={{ fov: 38, near: 0.1, far: 80, position: [0, 1.45, 4.4] }}
+                >
+                  <OverthinkerScene frame={frame} fps={fps} />
+                </ThreeCanvas>
+                <ComicOverlay frame={frame} />
+              </AbsoluteFill>
+            );
+          };
+          EOF
+
+          # --------------------------------------------------------------------
+          # 12. Remotion Root & Entrypoint (src/Root.tsx & src/index.ts)
+          # --------------------------------------------------------------------
+          cat << 'EOF' > gym-anim/src/Root.tsx
+          import React from "react";
+          import { Composition } from "remotion";
+          import { OverthinkerVideo } from "./Video";
+
+          export const RemotionRoot: React.FC = () => {
+            const fps = Number(process.env.ANIM_FPS || 30);
+            const includeAudio = process.env.INCLUDE_AUDIO !== "false";
+
+            return (
+              <Composition
+                id="OverthinkerAtGym"
+                component={OverthinkerVideo}
+                durationInFrames={32 * fps}
+                fps={fps}
+                width={1080}
+                height={1920}
+                defaultProps={{ includeAudio }}
+              />
+            );
+          };
+          EOF
+
+          cat << 'EOF' > gym-anim/src/index.ts
+          import { registerRoot } from "remotion";
+          import { RemotionRoot } from "./Root";
+
+          registerRoot(RemotionRoot);
+          EOF
+
+      - name: Install Node Dependencies & Ensure Remotion Browser
+        working-directory: gym-anim
+        run: |
+          npm install --legacy-peer-deps
+          npx remotion browser ensure
+
+      - name: Synthesize Synced Comedy SFX & Soundtrack WAV
+        working-directory: gym-anim
+        run: |
+          node scripts/generate-audio.mjs
+
+      - name: Render 1080x1920 Funny Animation MP4 (Three.js + Remotion)
+        working-directory: gym-anim
+        env:
+          ANIM_FPS: ${{ github.event.inputs.fps || '30' }}
+          INCLUDE_AUDIO: ${{ github.event.inputs.include_audio || 'true' }}
+        run: |
+          npx remotion render src/index.ts OverthinkerAtGym out/overthinker-at-gym.mp4 \
+            --gl=swangle \
+            --codec=h264 \
+            --crf=${{ github.event.inputs.quality_crf || '18' }} \
+            --concurrency=${{ github.event.inputs.concurrency || '2' }} \
+            --log=info
+          ls -lh out/overthinker-at-gym.mp4
+          ffprobe -v error -show_format -show_streams out/overthinker-at-gym.mp4
+
+      - name: Upload Rendered Animation MP4 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: overthinker-at-gym-short-mp4
+          path: gym-anim/out/overthinker-at-gym.mp4
+          retention-days: 14
