@@ -24,15 +24,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          # cache: npm  <-- DIHAPUS agar tidak error saat lock file belum ada
 
       - name: Install dependencies
         run: |
           if [ -f package.json ]; then
-            npm ci
+            npm install
           else
             npm init -y
+            npm install
           fi
+
           npm install three @react-three/fiber @react-three/drei \
             @react-three/postprocessing @remotion/three remotion \
             @remotion/cli @remotion/renderer @types/three
