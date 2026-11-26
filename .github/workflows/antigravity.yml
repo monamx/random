@@ -24,7 +24,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          # cache: npm  <-- DIHAPUS agar tidak error saat lock file belum ada
+
+      # 🔽 LANGKAH BARU: Instal Antigravity CLI (agy)
+      - name: Install Antigravity CLI
+        run: |
+          curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          agy --version
 
       - name: Install dependencies
         run: |
