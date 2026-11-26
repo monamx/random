@@ -1,0 +1,139 @@
+name: Generate Cinematic 3D Video with Antigravity
+
+on:
+  workflow_dispatch:
+    inputs:
+      brief:
+        description: "Brief adegan 3D"
+        required: true
+        default: "Objek organik metalik dengan pencahayaan studio sinematik"
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          if [ -f package.json ]; then
+            npm ci
+          else
+            npm init -y
+          fi
+          npm install three @react-three/fiber @react-three/drei \
+            @react-three/postprocessing @remotion/three remotion \
+            @remotion/cli @remotion/renderer @types/three
+          npx remotion add @remotion/three
+
+      - name: Write inline cinematic 3D skill
+        run: |
+          mkdir -p "$RUNNER_TEMP/skills/three-remotion-cinematic"
+          cat > "$RUNNER_TEMP/skills/three-remotion-cinematic/SKILL.md" <<'SKILL_EOF'
+          ---
+          name: three-remotion-cinematic
+          description: Photoreal, non-blocky 3D animation with Three.js + Remotion.
+          ---
+          # Three.js + Remotion Cinematic Realism
+          ## Hard rules
+          - Never use useFrame from @react-three/fiber inside Remotion.
+          - All animation MUST derive from useCurrentFrame() / interpolate() / spring().
+          - Always clamp interpolate() with extrapolateLeft/Right: 'clamp'.
+          - Lit surfaces MUST use MeshStandardMaterial or MeshPhysicalMaterial.
+          - renderer.shadowMap.enabled = true; light.castShadow = true; mesh.castShadow = true.
+          - Use ACESFilmicToneMapping and SRGBColorSpace.
+          - Organic/rounded geometry MUST be subdivided (level 4–6) or RoundedBox; flatShading = false.
+          - Use IBL: <Environment preset="studio" /> or PMREM HDR.
+          - Shadow type on r186+: PCFSoftShadowMap is removed. Use PCFShadowMap + shadow.radius, or VSMShadowMap + shadow.radius + blurSamples.
+          - Tighten shadow camera frustum to scene bounds.
+          - Camera FOV: 35–50°. Avoid 75° unless wide-angle is explicitly requested.
+          - If it looks like boxes, fix geometry/bevels/normals first, not more lights.
+          ## Geometry
+          - Blob: IcosahedronGeometry(r, 6) + vertex noise; computeVertexNormals().
+          - Soft cube: RoundedBox with bevel segments >= 4.
+          - Capsule: CapsuleGeometry with radialSegments >= 32.
+          - Sphere: SphereGeometry(r, 64, 64).
+          - Custom profile: LatheGeometry / ExtrudeGeometry with bevelSegments >= 4.
+          ## PBR
+          - Plastic: roughness 0.35–0.55, metalness 0.
+          - Rubber/matte: roughness 0.7–0.95, metalness 0.
+          - Brushed metal: roughness 0.25–0.45, metalness 1.
+          - Polished metal: roughness 0.05–0.15, metalness 1.
+          - Glass/clearcoat: MeshPhysicalMaterial + transmission/clearcoat.
+          ## Lighting rig
+          - Key: DirectionalLight/SpotLight, intensity 1–3, castShadow.
+          - Fill: HemisphereLight/AmbientLight, intensity 0.4–1.0.
+          - Rim: DirectionalLight/PointLight, intensity 0.6–1.5, no shadow.
+          - IBL: Environment preset studio or HDR.
+          - Key:Fill ~2:1–4:1; Rim ~0.5–1.0 × key.
+          ## Shadows
+          - mapSize 2048; shadow.radius 4 (PCF) or blurSamples 8 (VSM).
+          - Add ContactShadows under hero object.
+          - Add SSAO or aoMap for crevice darkening.
+          ## Camera
+          - PerspectiveCamera fov 40, near 0.1, far 100.
+          - Drive position from useCurrentFrame() with clamped interpolate().
+          - Add DepthOfField focusDistance 0.02, focalLength 0.05, bokehScale 2.
+          ## Post
+          - Bloom intensity 0.15–0.4, luminanceThreshold 0.6–0.8.
+          - Vignette darkness 0.3–0.5, offset 0.3.
+          - Noise opacity 0.02–0.05, blend SOFT_LIGHT.
+          - Do not stack heavy effects.
+          ## Remotion determinism
+          - Wrap in <ThreeCanvas width={width} height={height}>.
+          - Sequence inside ThreeCanvas must set layout="none".
+          - No requestAnimationFrame, Date.now, performance.now, unseeded Math.random.
+          - Use random('seed-string') from remotion for seeded randomness.
+          - Render the same frame twice to verify identical output.
+          ## Quality gate
+          - No faceting; shadows soft; highlights roll off; reflections present; no flicker; post does not crush blacks.
+          ## Anti-patterns
+          - MeshBasicMaterial on hero; flatShading on organic; useFrame; default shadow frustum; no env map; too many lights; bloom > 0.5; perfectly sharp shadows; PCFSoftShadowMap on r186+.
+          SKILL_EOF
+
+      - name: Generate 3D scene code with Antigravity
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          BRIEF: ${{ github.event.inputs.brief }}
+        run: |
+          agy -p "Gunakan skill di $RUNNER_TEMP/skills/three-remotion-cinematic/SKILL.md. \
+          Buat komposisi Remotion + Three.js berdurasi 6 detik, 30fps, 1920x1080. \
+          Brief: $BRIEF. \
+          Wajib: geometri halus (bukan kotak polos), material PBR metalik/organik, \
+          lighting rig tiga titik + IBL, bayangan lembut VSM atau PCFShadowMap, \
+          kamera dolly-in FOV 40, depth of field tipis, post-processing bloom halus + grain. \
+          Tulis kode ke src/ dan pastikan deterministik (semua animasi dari useCurrentFrame)."
+
+      - name: Render video with Remotion
+        run: |
+          npx remotion render src/index.ts Cinematic3D out/video.mp4 \
+            --codec=h264 --pixel-format=yuv420p --crf=18 \
+            --concurrency=1 --gl=angle
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cinematic-3d-video
+          path: out/video.mp4
+          retention-days: 7
+
+      - name: Commit generated code (optional)
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/ package.json package-lock.json
+          git commit -m "Generate cinematic 3D scene via Antigravity" || echo "No changes"
+          git push
