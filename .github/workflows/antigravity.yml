@@ -25,13 +25,28 @@ jobs:
         with:
           node-version: 22
 
-      # 🔽 LANGKAH BARU: Instal Antigravity CLI (agy)
       - name: Install Antigravity CLI
         run: |
           curl -fsSL https://antigravity.google/cli/install.sh | bash -s -- --dir "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.local/bin:$PATH"
-          agy --version
+
+      # 🔽 LANGKAH BARU: Konfigurasi otentikasi headless via Gemini API key
+      - name: Configure agy authentication
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          mkdir -p "$HOME/.gemini/antigravity-cli"
+          cat > "$HOME/.gemini/antigravity-cli/settings.json" <<EOF
+          {
+            "modelProvider": "gemini"
+          }
+          EOF
+          # Verifikasi bahwa kunci tersedia tanpa mencetaknya
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "GEMINI_API_KEY secret is not set" >&2
+            exit 1
+          fi
+          echo "agy authentication configured for Gemini API key provider"
 
       - name: Install dependencies
         run: |
